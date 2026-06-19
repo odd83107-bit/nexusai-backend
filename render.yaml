@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: nexusai-backend
+    runtime: docker
+    plan: free
+    branch: main
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PORT
+        value: 8000
+    healthCheckPath: /health

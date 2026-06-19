@@ -1,0 +1,648 @@
+import asyncio
+import builtins
+import html
+import json
+import re
+import sys
+import time
+import uuid
+from contextlib import asynccontextmanager
+from functools import lru_cache
+from pathlib import Path
+from typing import Any
+from urllib.parse import quote_plus
+
+import requests
+import urllib3
+from deep_translator import GoogleTranslator
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from pydantic import BaseModel, Field, model_validator
+
+from agent import PROVIDER_NAMES, AmazonAgent, ProductResult, VariationResult
+
+if sys.stdout.encoding != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr.encoding != "utf-8":
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+_original_print = builtins.print
+
+
+def print(*args: Any, **kwargs: Any) -> None:
+    safe_args = [
+        str(arg).encode("utf-8", errors="ignore").decode("utf-8", errors="replace")
+        for arg in args
+    ]
+    try:
+        _original_print(*safe_args, **kwargs)
+    except UnicodeEncodeError:
+        fallback_args = [
+            str(arg).encode("ascii", errors="backslashreplace").decode("ascii")
+            for arg in safe_args
+        ]
+        try:
+            _original_print(*fallback_args, **kwargs)
+        except Exception:
+            return
+
+FAST_SEARCH_LIMIT_PER_SITE = 3
+SEARCH_CACHE_TTL_SECONDS = 60 * 60
+SEARCH_CACHE_PATH = Path("search_cache.json")
+INLINE_SEARCH_TIMEOUT_SECONDS = 4.5
+HTTP_PROVIDER_SITES = (
+    "nike",
+    "adidas",
+    "super_pharm",
+    "ksp",
+    "machsanei_hashmal",
+    "max_stock",
+    "zol_stock",
+    "ikea",
+    "ivory",
+    "terminal_x",
+    "be_pharm",
+    "shufersal",
+    "shein",
+)
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1)
+    limit: int = Field(default=5, ge=1, le=20)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_lovable_payload(cls, data):
+        if isinstance(data, str):
+            return {"query": data}
+        if not isinstance(data, dict):
+            return data
+
+        if "query" in data:
+            return data
+
+        for key in ("productName", "product_name", "product", "name", "search", "text", "message"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return {**data, "query": value}
+
+        return data
+
+
+class DetailsRequest(BaseModel):
+    nexus_id: str = Field(min_length=1)
+
+
+class VariationResponse(BaseModel):
+    type: str
+    label: str
+    in_stock: bool
+    price: str | None
+
+
+class ProductResponse(BaseModel):
+    nexus_id: str
+    site: str
+    provider_name: str
+    title: str
+    price: str | None
+    image: str | None
+
+
+class SearchResponse(BaseModel):
+    results: list[ProductResponse]
+
+
+class SearchTaskResponse(BaseModel):
+    task_id: str
+    status: str
+
+
+class SearchStatusResponse(BaseModel):
+    task_id: str
+    status: str
+    results: list[ProductResponse] | None = None
+    error: str | None = None
+
+
+class DetailsResponse(ProductResponse):
+    variations: list[VariationResponse]
+
+
+agent = AmazonAgent()
+product_registry: dict[str, ProductResult] = {}
+search_tasks: dict[str, dict[str, Any]] = {}
+agent_lock = asyncio.Lock()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await agent.start()
+    yield
+    await agent.stop()
+
+
+app = FastAPI(title="Autonomous Shopping Agent", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.middleware("http")
+async def add_private_network_headers(request, call_next):
+    if request.method == "OPTIONS":
+        response = Response(status_code=200)
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
+
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/debug/fetch-test", response_class=HTMLResponse)
+async def debug_fetch_test() -> str:
+    return """
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>NexusAI Fetch Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.5; }
+    button { padding: 10px 16px; margin: 8px 0; cursor: pointer; }
+    pre { background: #111827; color: #e5e7eb; padding: 16px; border-radius: 8px; white-space: pre-wrap; direction: ltr; text-align: left; }
+    input { padding: 10px; min-width: 280px; }
+  </style>
+</head>
+<body>
+  <h1>NexusAI Local Fetch Test</h1>
+  <p>אם הבדיקה הזו עובדת אבל Lovable עדיין מציג Failed to fetch, הבעיה היא בקוד/סביבת Lovable ולא בשרת המקומי.</p>
+  <input id="query" value="test" />
+  <button onclick="runSearch()">בדיקת חיפוש</button>
+  <button onclick="runHealth()">בדיקת Health</button>
+  <pre id="output">מוכן לבדיקה...</pre>
+  <script>
+    const output = document.getElementById("output");
+    const show = (value) => output.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+
+    async function runHealth() {
+      try {
+        const res = await fetch("http://127.0.0.1:8000/health");
+        show({ status: res.status, headers: Object.fromEntries(res.headers.entries()), body: await res.json() });
+      } catch (error) {
+        show("HEALTH FAILED: " + (error && error.message ? error.message : error));
+      }
+    }
+
+    async function runSearch() {
+      try {
+        const query = document.getElementById("query").value || "test";
+        const res = await fetch("http://127.0.0.1:8000/amazon/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query, limit: 20 })
+        });
+        show({ status: res.status, headers: Object.fromEntries(res.headers.entries()), body: await res.json() });
+      } catch (error) {
+        show("SEARCH FAILED: " + (error && error.message ? error.message : error));
+      }
+    }
+  </script>
+</body>
+</html>
+"""
+
+
+@app.post("/amazon/open")
+async def open_amazon() -> dict[str, str]:
+    try:
+        url = await agent.open_amazon()
+        return {"url": url}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/amazon/search", response_model=SearchTaskResponse)
+async def search_amazon(request: SearchRequest, http_request: Request) -> SearchTaskResponse:
+    print(
+        f"[Search] Incoming headers user_agent={http_request.headers.get('user-agent')!r} "
+        f"origin={http_request.headers.get('origin')!r} referer={http_request.headers.get('referer')!r}",
+        flush=True,
+    )
+    task_id = uuid.uuid4().hex
+    cache_key = _search_cache_key(request.query, min(request.limit, FAST_SEARCH_LIMIT_PER_SITE))
+    cached_results = _read_cached_search(cache_key)
+    if cached_results is not None:
+        print(f"[Search] method=Cache query='{request.query}' results={len(cached_results)}", flush=True)
+        _restore_cached_products(cache_key)
+        search_tasks[task_id] = {"status": "completed", "results": cached_results, "error": None}
+        return SearchTaskResponse(task_id=task_id, status="completed")
+
+    search_tasks[task_id] = {"status": "pending", "results": None, "error": None}
+    task = asyncio.create_task(_run_search_task(task_id, request.query, min(request.limit, FAST_SEARCH_LIMIT_PER_SITE), cache_key))
+    try:
+        await asyncio.wait_for(asyncio.shield(task), timeout=INLINE_SEARCH_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        return SearchTaskResponse(task_id=task_id, status=search_tasks[task_id]["status"])
+
+    return SearchTaskResponse(task_id=task_id, status=search_tasks[task_id]["status"])
+
+
+@app.get("/amazon/status/{task_id}", response_model=SearchStatusResponse)
+async def amazon_search_status(task_id: str) -> SearchStatusResponse:
+    task = search_tasks.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Unknown task_id.")
+
+    return SearchStatusResponse(
+        task_id=task_id,
+        status=task["status"],
+        results=task["results"],
+        error=task["error"],
+    )
+
+
+@app.post("/amazon/details", response_model=DetailsResponse)
+async def amazon_details(request: DetailsRequest, http_request: Request) -> DetailsResponse:
+    print(
+        f"[Details] Incoming headers user_agent={http_request.headers.get('user-agent')!r} "
+        f"origin={http_request.headers.get('origin')!r} referer={http_request.headers.get('referer')!r} "
+        f"ngrok_skip={http_request.headers.get('ngrok-skip-browser-warning')!r}",
+        flush=True,
+    )
+    received_nexus_id = request.nexus_id
+    print(f"[Details] Received nexus_id repr={received_nexus_id!r}", flush=True)
+    print(f"[Details] Registry size={len(product_registry)} contains={received_nexus_id in product_registry}", flush=True)
+    result = product_registry.get(received_nexus_id)
+    if result is None:
+        result = _restore_product_by_nexus_id(received_nexus_id)
+    if result is None or not result.url:
+        print(f"[Details] Registry miss for nexus_id repr={received_nexus_id!r}", flush=True)
+        print(f"[Details] Known registry ids={list(product_registry.keys())[:10]!r}", flush=True)
+        raise HTTPException(status_code=404, detail="Unknown or expired nexus_id. Search again before requesting details.")
+
+    print(f"[Details] Matched nexus_id repr={result.nexus_id!r}", flush=True)
+    print(f"[Details] Registry URL={result.url}", flush=True)
+    try:
+        if result.site == "aliexpress":
+            variations = await agent.get_aliexpress_variations(result.url)
+        elif result.site == "next":
+            variations = await agent.get_next_variations(result.url)
+        elif result.site == "amazon":
+            variations = await agent.get_variations(result.url)
+        elif result.site in HTTP_PROVIDER_SITES:
+            variations = await agent.get_http_provider_variations(result.site, result.url)
+        else:
+            variations = []
+        result.variations = variations
+        response = _to_details_response(result, "en")
+        print(f"[Details] Response JSON={response.model_dump_json().encode('ascii', errors='backslashreplace').decode('ascii')}", flush=True)
+        return response
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+def _to_response(result: ProductResult, source_language: str) -> ProductResponse:
+    title = _translate_text(result.title, source="en", target=source_language) if source_language != "en" else result.title
+    return ProductResponse(
+        nexus_id=result.nexus_id,
+        site=result.site,
+        provider_name=result.provider_name or PROVIDER_NAMES.get(result.site, result.site),
+        title=title,
+        price=result.price,
+        image=result.image,
+    )
+
+
+def _search_query_for_amazon(query: str, source_language: str) -> str:
+    normalized = query.strip().lower()
+    overrides = {
+        "מגף אוסטרלי": "Australian boot Blundstone",
+        "מגפיים אוסטרליות": "Australian boots Blundstone",
+        "מגפיים אוסטרליים": "Australian boots Blundstone",
+    }
+    if normalized in overrides:
+        return overrides[normalized]
+    return _translate_text(query, source=source_language, target="en") if source_language != "en" else query
+
+
+async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str) -> None:
+    search_tasks[task_id]["status"] = "running"
+    try:
+        source_language = _detect_source_language(query)
+        amazon_query = _search_query_for_amazon(query, source_language)
+        print(f"[Search] Original query='{query}' translated='{amazon_query}'", flush=True)
+        per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
+        provider_tasks = [
+            ("amazon", _fast_search_amazon(amazon_query, per_site_limit)),
+            ("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit)),
+            ("next", _fast_search_next(query, per_site_limit)),
+            *[(site, _fast_search_http_provider(site, query, per_site_limit)) for site in HTTP_PROVIDER_SITES],
+        ]
+        site_results = await asyncio.gather(
+            *[task for _, task in provider_tasks],
+            return_exceptions=True,
+        )
+        results: list[ProductResult] = []
+        counts: dict[str, int] = {}
+        for index, (site, _) in enumerate(provider_tasks):
+            provider_result = site_results[index]
+            if not isinstance(provider_result, list):
+                counts[site] = 0
+                continue
+            relevant_results = []
+            for result in provider_result:
+                if result.site != site:
+                    continue
+                if not AmazonAgent.is_title_relevant(query, result.title):
+                    print(f"[Filter] Dropped unrelated item from {site}: {result.title!r}", flush=True)
+                    continue
+                print(f"[Filter] Kept {result.title!r} for query {query!r}", flush=True)
+                relevant_results.append(result)
+            capped = relevant_results[:per_site_limit]
+            counts[site] = len(capped)
+            results.extend(capped)
+        print(
+            f"[Search] Aggregated {counts} total={len(results)}",
+            flush=True,
+        )
+        _store_products(results)
+        response_results = [_to_response(result, source_language) for result in results]
+        search_tasks[task_id]["results"] = response_results
+        if response_results:
+            _write_cached_search(cache_key, response_results, results)
+        search_tasks[task_id]["status"] = "completed"
+    except Exception as exc:
+        search_tasks[task_id]["error"] = str(exc)
+        search_tasks[task_id]["status"] = "failed"
+
+
+async def _fast_search_aliexpress(query: str, limit: int) -> list[ProductResult]:
+    try:
+        async with agent_lock:
+            return await agent.fast_search_aliexpress(query=query, limit=limit)
+    except Exception as exc:
+        print(f"[AliExpress Search] Failed: {exc}", flush=True)
+        return []
+
+
+async def _fast_search_next(query: str, limit: int) -> list[ProductResult]:
+    try:
+        return await agent.fast_search_next(query=query, limit=limit)
+    except Exception as exc:
+        print(f"[Next Search] Failed: {exc}", flush=True)
+        return []
+
+
+async def _fast_search_http_provider(site: str, query: str, limit: int) -> list[ProductResult]:
+    try:
+        return await agent.fast_search_http_provider(site=site, query=query, limit=limit)
+    except Exception as exc:
+        print(f"[{site} Search] Failed: {exc}", flush=True)
+        return []
+
+
+async def _fast_search_amazon(query: str, limit: int) -> list[ProductResult]:
+    try:
+        http_results = await asyncio.to_thread(_fast_search_amazon_http, query, limit)
+        if http_results:
+            print(f"[Search] Amazon method=HTTP results={len(http_results)}", flush=True)
+            return http_results
+    except Exception:
+        print("[Search] Amazon method=HTTP failed", flush=True)
+
+    print("[Search] Amazon method=Playwright fallback", flush=True)
+    async with agent_lock:
+        playwright_results = await agent.fast_search(query=query, limit=limit)
+    print(f"[Search] Amazon method=Playwright results={len(playwright_results)}", flush=True)
+    return playwright_results
+
+
+def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    response = requests.get(
+        f"https://www.amazon.com/s?k={quote_plus(query)}",
+        headers=headers,
+        timeout=3,
+        verify=False,
+    )
+    response.raise_for_status()
+
+    results: list[ProductResult] = []
+    cards = re.findall(
+        r'<div[^>]+data-component-type="s-search-result"[\s\S]*?</div>\s*</div>\s*</div>\s*</div>',
+        response.text,
+    )
+    for card in cards:
+        title_match = re.search(r'<h2[\s\S]*?<span[^>]*>(.*?)</span>', card)
+        href_match = re.search(r'<a[^>]+class="[^"]*a-link-normal[^"]*"[^>]+href="([^"]+)"', card)
+        image_match = re.search(r'<img[^>]+class="[^"]*s-image[^"]*"[^>]+src="([^"]+)"', card)
+        price_match = re.search(r'<span[^>]+class="a-offscreen"[^>]*>(.*?)</span>', card)
+        if not title_match:
+            continue
+
+        title = html.unescape(re.sub(r"<[^>]+>", "", title_match.group(1))).strip()
+        if not title:
+            continue
+
+        href = html.unescape(href_match.group(1)) if href_match else None
+        url = f"https://www.amazon.com{href}" if href and href.startswith("/") else href
+        url = AmazonAgent.normalize_product_url(url)
+        image = html.unescape(image_match.group(1)) if image_match else None
+        price = html.unescape(price_match.group(1)).strip() if price_match else None
+        nexus_id = AmazonAgent._build_nexus_id("amazon", url or title)
+
+        results.append(
+            ProductResult(
+                nexus_id=nexus_id,
+                site="amazon",
+                title=title,
+                price=price,
+                url=url,
+                image=image,
+                variations=[],
+            )
+        )
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+async def _fast_search_placeholder(site: str, query: str, limit: int) -> list[ProductResult]:
+    return []
+
+
+def _to_details_response(result: ProductResult, source_language: str) -> DetailsResponse:
+    product = _to_response(result, source_language)
+    return DetailsResponse(
+        nexus_id=product.nexus_id,
+        site=product.site,
+        provider_name=product.provider_name,
+        title=product.title,
+        price=product.price,
+        image=product.image,
+        variations=[_variation_to_response(variation, source_language) for variation in result.variations],
+    )
+
+
+def _store_products(results: list[ProductResult]) -> None:
+    for result in results:
+        if _is_valid_nexus_product(result):
+            product_registry[result.nexus_id] = result
+
+
+def _is_valid_nexus_product(result: ProductResult) -> bool:
+    if result.site == "amazon":
+        return result.nexus_id.startswith("amazon_") and bool(result.url and result.url.startswith("https://www.amazon.com/"))
+    if result.site == "aliexpress":
+        return result.nexus_id.startswith("aliexpress_") and bool(result.url and result.url.startswith("https://www.aliexpress.com/item/"))
+    if result.site == "next":
+        return result.nexus_id.startswith("next_") and bool(result.url and result.url.startswith("https://www.next.co.il/"))
+    if result.site in HTTP_PROVIDER_SITES:
+        return result.nexus_id.startswith(f"{result.site}_") and bool(result.url and result.url.startswith("https://"))
+    return False
+
+
+def _search_cache_key(query: str, limit: int) -> str:
+    return f"{query.strip().lower()}::{limit}"
+
+
+def _read_cached_search(cache_key: str) -> list[ProductResponse] | None:
+    cache = _load_search_cache()
+    entry = cache.get(cache_key)
+    if not entry:
+        return None
+    if time.time() - entry.get("created_at", 0) > SEARCH_CACHE_TTL_SECONDS:
+        return None
+    cached_results = entry.get("results", [])
+    if not cached_results:
+        return None
+    original_query = cache_key.split("::", 1)[0]
+    normalized_results = []
+    for item in cached_results:
+        if "provider_name" not in item:
+            item = {**item, "provider_name": PROVIDER_NAMES.get(item.get("site"), item.get("site", ""))}
+        if not AmazonAgent.is_title_relevant(original_query, item.get("title", "")):
+            print(f"[Filter] Dropped unrelated cached item from {item.get('site')}: {item.get('title')!r}", flush=True)
+            continue
+        normalized_results.append(ProductResponse(**item))
+    return normalized_results or None
+
+
+def _write_cached_search(cache_key: str, results: list[ProductResponse], products: list[ProductResult]) -> None:
+    cache = _load_search_cache()
+    cache[cache_key] = {
+        "created_at": time.time(),
+        "results": [result.model_dump() for result in results],
+        "products": [
+            {
+                "nexus_id": product.nexus_id,
+                "site": product.site,
+                "provider_name": product.provider_name or PROVIDER_NAMES.get(product.site, product.site),
+                "title": product.title,
+                "price": product.price,
+                "url": product.url,
+                "image": product.image,
+                "variations": [],
+            }
+            for product in products
+        ],
+    }
+    SEARCH_CACHE_PATH.write_text(json.dumps(cache), encoding="utf-8")
+
+
+def _load_search_cache() -> dict[str, Any]:
+    if not SEARCH_CACHE_PATH.exists():
+        return {}
+    try:
+        return json.loads(SEARCH_CACHE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _restore_product_by_nexus_id(nexus_id: str) -> ProductResult | None:
+    cache = _load_search_cache()
+    for entry in cache.values():
+        if time.time() - entry.get("created_at", 0) > SEARCH_CACHE_TTL_SECONDS:
+            continue
+        for product in entry.get("products", []):
+            if product.get("nexus_id") != nexus_id:
+                continue
+            try:
+                result = ProductResult(**product)
+            except TypeError:
+                return None
+            if _is_valid_nexus_product(result):
+                product_registry[result.nexus_id] = result
+                print(f"[Details] Restored nexus_id from cache repr={result.nexus_id!r}", flush=True)
+                return result
+    return None
+
+
+def _restore_cached_products(cache_key: str) -> None:
+    cache = _load_search_cache()
+    entry = cache.get(cache_key)
+    if not entry or time.time() - entry.get("created_at", 0) > SEARCH_CACHE_TTL_SECONDS:
+        return
+    for product in entry.get("products", []):
+        try:
+            result = ProductResult(**product)
+        except TypeError:
+            continue
+        if _is_valid_nexus_product(result):
+            product_registry[result.nexus_id] = result
+
+
+def _variation_to_response(variation: VariationResult, source_language: str) -> VariationResponse:
+    label = _translate_text(variation.label, source="en", target=source_language) if source_language != "en" else variation.label
+    return VariationResponse(type=variation.type, label=label, in_stock=variation.in_stock, price=variation.price)
+
+
+def _detect_source_language(text: str) -> str:
+    if any("\u0590" <= character <= "\u05ff" for character in text):
+        return "iw"
+    if text.isascii():
+        return "en"
+    return "auto"
+
+
+def _translate_text(text: str, source: str, target: str) -> str:
+    if not text.strip() or source == target:
+        return text
+    original_get = requests.get
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    def netfree_get(*args: Any, **kwargs: Any):
+        kwargs.setdefault("verify", False)
+        return original_get(*args, **kwargs)
+
+    try:
+        requests.get = netfree_get
+        return _translator(source, target).translate(text)
+    except Exception:
+        return text
+    finally:
+        requests.get = original_get
+
+
+@lru_cache(maxsize=32)
+def _translator(source: str, target: str) -> GoogleTranslator:
+    return GoogleTranslator(source=source, target=target)
