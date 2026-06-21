@@ -50,7 +50,8 @@ def print(*args: Any, **kwargs: Any) -> None:
 FAST_SEARCH_LIMIT_PER_SITE = 3
 SEARCH_CACHE_TTL_SECONDS = 60 * 60
 SEARCH_CACHE_PATH = Path("search_cache.json")
-INLINE_SEARCH_TIMEOUT_SECONDS = 4.5
+INLINE_SEARCH_TIMEOUT_SECONDS = 2.8
+PER_PROVIDER_TIMEOUT_SECONDS = 2.5
 HTTP_PROVIDER_SITES = (
     "nike",
     "adidas",
@@ -340,6 +341,17 @@ def _search_query_for_amazon(query: str, source_language: str) -> str:
     return _translate_text(query, source=source_language, target="en") if source_language != "en" else query
 
 
+async def _run_with_timeout(name: str, coro, timeout: float) -> list[ProductResult]:
+    try:
+        return await asyncio.wait_for(coro, timeout=timeout)
+    except asyncio.TimeoutError:
+        print(f"[{name}] Timeout after {timeout}s", flush=True)
+        return []
+    except Exception as exc:
+        print(f"[{name}] Failed: {exc}", flush=True)
+        return []
+
+
 async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str) -> None:
     search_tasks[task_id]["status"] = "running"
     try:
@@ -348,18 +360,19 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
         print(f"[Search] Original query='{query}' translated='{amazon_query}'", flush=True)
         per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
         provider_tasks = [
-            ("amazon", _fast_search_amazon(amazon_query, per_site_limit)),
-            ("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit)),
-            ("next", _fast_search_next(query, per_site_limit)),
-            *[(site, _fast_search_http_provider(site, query, per_site_limit)) for site in HTTP_PROVIDER_SITES],
+            _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("next", _fast_search_next(query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            *[
+                _run_with_timeout(site, _fast_search_http_provider(site, query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS)
+                for site in HTTP_PROVIDER_SITES
+            ],
         ]
-        site_results = await asyncio.gather(
-            *[task for _, task in provider_tasks],
-            return_exceptions=True,
-        )
+        site_results = await asyncio.gather(*provider_tasks)
         results: list[ProductResult] = []
         counts: dict[str, int] = {}
-        for index, (site, _) in enumerate(provider_tasks):
+        sites = ["amazon", "aliexpress", "next", *HTTP_PROVIDER_SITES]
+        for index, site in enumerate(sites):
             provider_result = site_results[index]
             if not isinstance(provider_result, list):
                 counts[site] = 0
