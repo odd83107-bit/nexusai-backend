@@ -18,3 +18,4 @@ amazon_no_variations_debug.*
 *.json
 !railway.json
 !render.yaml
+debug/
