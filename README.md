@@ -66,6 +66,14 @@ The project includes a `Dockerfile` based on the official Playwright Python imag
 4. Set the environment variable `PORT=8000` (Railway usually injects it automatically).
 5. Deploy. Railway provides a stable HTTPS URL.
 
+## Environment variables
+
+- `PORT` — server port (default: 8000).
+- `SERPAPI_API_KEY` — required for the **Temu** search source. Get a free key at [serpapi.com](https://serpapi.com).
+- `HEADLESS` — set to `true` to run the Playwright browser in headless mode.
+
+Add these in the Railway/Render dashboard under Environment Variables.
+
 ### Important: update Lovable frontend URL
 
 After deployment, replace the local tunnel URL in your frontend code with the new cloud URL:

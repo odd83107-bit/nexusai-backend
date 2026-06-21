@@ -55,6 +55,7 @@ PROVIDER_NAMES = {
     "be_pharm": "Be פארם",
     "shufersal": "שופרסל",
     "shein": "Shein",
+    "temu": "Temu",
 }
 QUERY_SYNONYMS = {
     "מחשבון": {"מחשבון", "מחשבונים", "calculator", "calculators", "calc"},
@@ -1264,6 +1265,59 @@ class AmazonAgent:
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         }
+
+    async def fast_search_temu(self, query: str, limit: int = 3) -> list[ProductResult]:
+        api_key = os.getenv("SERPAPI_API_KEY")
+        if not api_key:
+            print("[Temu Search] Missing SERPAPI_API_KEY", flush=True)
+            return []
+        url = "https://serpapi.com/search.json"
+        params = {
+            "engine": "google_shopping",
+            "q": query,
+            "api_key": api_key,
+            "gl": "us",
+            "hl": "en",
+            "tbm": "shop",
+        }
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=3.0) as client:
+                response = await client.get(url, params=params)
+            print(f"[Temu Search] HTTP status={response.status_code}", flush=True)
+            if response.status_code >= 400:
+                print(f"[Temu Search] Error: {response.text[:300]}", flush=True)
+                return []
+            data = response.json()
+            items = data.get("shopping_results", []) or []
+            results: list[ProductResult] = []
+            for item in items[:limit]:
+                source = (item.get("source") or "").lower()
+                link = item.get("link") or ""
+                if "temu" not in source and "temu" not in link.lower():
+                    continue
+                title = item.get("title") or ""
+                price = item.get("price") or None
+                thumbnail = item.get("thumbnail") or item.get("image") or None
+                if not title:
+                    continue
+                url_id = self._generic_provider_item_id(link) if link else hashlib.sha1(title.encode("utf-8")).hexdigest()[:12]
+                nexus_id = self._build_generic_provider_nexus_id("temu", url_id, link or title)
+                results.append(
+                    ProductResult(
+                        nexus_id=nexus_id,
+                        site="temu",
+                        title=title,
+                        price=str(price) if price else None,
+                        url=link,
+                        image=thumbnail,
+                        variations=[],
+                    )
+                )
+            print(f"[Temu Search] Found {len(results)} results", flush=True)
+            return results
+        except Exception as exc:
+            print(f"[Temu Search] Failed: {exc}", flush=True)
+            return []
 
     async def fast_search_http_provider(self, site: str, query: str, limit: int = 3) -> list[ProductResult]:
         config = self._http_provider_configs().get(site)

@@ -361,6 +361,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
         per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
         provider_tasks = [
             _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("temu", _fast_search_temu(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("next", _fast_search_next(query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             *[
@@ -371,7 +372,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
         site_results = await asyncio.gather(*provider_tasks)
         results: list[ProductResult] = []
         counts: dict[str, int] = {}
-        sites = ["amazon", "aliexpress", "next", *HTTP_PROVIDER_SITES]
+        sites = ["amazon", "temu", "aliexpress", "next", *HTTP_PROVIDER_SITES]
         for index, site in enumerate(sites):
             provider_result = site_results[index]
             if not isinstance(provider_result, list):
@@ -402,6 +403,14 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
     except Exception as exc:
         search_tasks[task_id]["error"] = str(exc)
         search_tasks[task_id]["status"] = "failed"
+
+
+async def _fast_search_temu(query: str, limit: int) -> list[ProductResult]:
+    try:
+        return await agent.fast_search_temu(query=query, limit=limit)
+    except Exception as exc:
+        print(f"[Temu Search] Failed: {exc}", flush=True)
+        return []
 
 
 async def _fast_search_aliexpress(query: str, limit: int) -> list[ProductResult]:
