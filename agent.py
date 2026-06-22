@@ -194,16 +194,18 @@ class AmazonAgent:
             href = await self._safe_attribute(link_locator, "href")
             url = f"https://www.amazon.com{href}" if href and href.startswith("/") else href
             url = self.normalize_product_url(url)
-            image_raw = await self._safe_attribute(image_locator, "data-a-dynamic-image")
-            if image_raw:
-                try:
+            image = None
+            try:
+                image_raw = await self._safe_attribute(image_locator, "data-a-dynamic-image")
+                if image_raw:
                     import json as _json
                     dyn = _json.loads(image_raw)
                     image = max(dyn.keys(), key=lambda u: (dyn[u][0][0] if dyn[u] else 0)) if isinstance(dyn, dict) and dyn else image_raw
-                except Exception:
-                    image = image_raw
-            else:
-                image = await self._safe_attribute(image_locator, "src")
+                else:
+                    image = await self._safe_attribute(image_locator, "src")
+            except Exception as img_err:
+                print(f"[Amazon Playwright] image parse error: {img_err}", flush=True)
+                image = None
             nexus_id = self._build_nexus_id("amazon", url or title)
 
             results.append(
@@ -1600,34 +1602,43 @@ class AmazonAgent:
         results: list[ProductResult] = []
         seen: set[str] = set()
         for item in candidates:
-            title = cls._json_first_text(item, ("title", "name", "productName", "description", "product_name", "itemName", "text"))
-            url = cls._json_first_text(item, ("url", "link", "productUrl", "product_url", "href", "seoUrl"))
-            price = cls._json_first_text(item, ("price", "finalPrice", "salePrice", "displayPrice", "priceFormatted", "actualPrice", "minPrice"))
-            image = cls._json_first_text(item, ("image", "imageUrl", "img", "itemImg", "thumbnail", "picture", "mediaUrl"))
-            sku = cls._json_first_text(item, ("id", "sku", "productId", "itemId", "itemUin", "uin", "uinsql", "code", "catalogNumber", "pid"))
-            if not title:
-                continue
-            product_url = cls._normalize_provider_url(url, config) if url else None
-            if not product_url:
-                product_url = str(config["base_url"])
-                if sku:
-                    product_url = f"{product_url.rstrip()}/web/item/{sku}" if site == "ksp" else f"{product_url.rstrip('/')}/item/{sku}"
-            item_id = re.sub(r"\W+", "", str(sku or cls._generic_provider_item_id(product_url))).lower()[:48]
-            if item_id in seen:
-                continue
-            seen.add(item_id)
-            results.append(
-                ProductResult(
-                    nexus_id=cls._build_generic_provider_nexus_id(site, item_id, product_url),
-                    site=site,
-                    title=title,
-                    price=cls._clean_price(price),
-                    url=product_url,
-                    image=cls._normalize_json_image(image, config),
-                    variations=[],
-                    provider_name=PROVIDER_NAMES.get(site, site),
+            try:
+                title = cls._json_first_text(item, ("title", "name", "productName", "description", "product_name", "itemName", "text"))
+                url = cls._json_first_text(item, ("url", "link", "productUrl", "product_url", "href", "seoUrl"))
+                price = cls._json_first_text(item, ("price", "finalPrice", "salePrice", "displayPrice", "priceFormatted", "actualPrice", "minPrice"))
+                sku = cls._json_first_text(item, ("id", "sku", "productId", "itemId", "itemUin", "uin", "uinsql", "code", "catalogNumber", "pid"))
+                if not title:
+                    continue
+                try:
+                    image = cls._json_first_text(item, ("image", "imageUrl", "img", "itemImg", "thumbnail", "picture", "mediaUrl"))
+                    image = cls._normalize_json_image(image, config)
+                except Exception as img_err:
+                    print(f"[Scraper] {site} image extraction error: {img_err}", flush=True)
+                    image = None
+                product_url = cls._normalize_provider_url(url, config) if url else None
+                if not product_url:
+                    product_url = str(config["base_url"])
+                    if sku:
+                        product_url = f"{product_url.rstrip()}/web/item/{sku}" if site == "ksp" else f"{product_url.rstrip('/')}/item/{sku}"
+                item_id = re.sub(r"\W+", "", str(sku or cls._generic_provider_item_id(product_url))).lower()[:48]
+                if item_id in seen:
+                    continue
+                seen.add(item_id)
+                results.append(
+                    ProductResult(
+                        nexus_id=cls._build_generic_provider_nexus_id(site, item_id, product_url),
+                        site=site,
+                        title=title,
+                        price=cls._clean_price(price),
+                        url=product_url,
+                        image=image,
+                        variations=[],
+                        provider_name=PROVIDER_NAMES.get(site, site),
+                    )
                 )
-            )
+            except Exception as item_err:
+                print(f"[Scraper] {site} item parse error: {item_err}", flush=True)
+                continue
             if len(results) >= limit:
                 break
         return results
