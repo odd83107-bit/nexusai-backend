@@ -345,7 +345,9 @@ def _search_query_for_amazon(query: str, source_language: str) -> str:
 
 async def _run_with_timeout(name: str, coro, timeout: float) -> list[ProductResult]:
     try:
-        return await asyncio.wait_for(coro, timeout=timeout)
+        result = await asyncio.wait_for(coro, timeout=timeout)
+        print(f"[{name}] Completed results={len(result)}", flush=True)
+        return result
     except asyncio.TimeoutError:
         print(f"[{name}] Timeout after {timeout}s", flush=True)
         return []
@@ -408,10 +410,11 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
 
 
 async def _fast_search_temu(query: str, limit: int) -> list[ProductResult]:
+    print(f"[Temu Search] Wrapper invoked query={query!r} limit={limit}", flush=True)
     try:
         return await agent.fast_search_temu(query=query, limit=limit)
     except Exception as exc:
-        print(f"[Temu Search] Failed: {exc}", flush=True)
+        print(f"[Temu Search] Wrapper failed: {exc}", flush=True)
         return []
 
 
@@ -441,18 +444,21 @@ async def _fast_search_http_provider(site: str, query: str, limit: int) -> list[
 
 
 async def _fast_search_amazon(query: str, limit: int) -> list[ProductResult]:
+    print(f"[Amazon Search] Starting query={query!r} limit={limit}", flush=True)
     try:
         http_results = await asyncio.to_thread(_fast_search_amazon_http, query, limit)
+        print(f"[Amazon Search] HTTP returned {len(http_results)} results", flush=True)
         if http_results:
-            print(f"[Search] Amazon method=HTTP results={len(http_results)}", flush=True)
+            print("[Amazon Search] Using HTTP results", flush=True)
             return http_results
-    except Exception:
-        print("[Search] Amazon method=HTTP failed", flush=True)
+        print("[Amazon Search] HTTP returned empty, falling back to Playwright", flush=True)
+    except Exception as exc:
+        print(f"[Amazon Search] HTTP failed: {exc}", flush=True)
 
-    print("[Search] Amazon method=Playwright fallback", flush=True)
+    print("[Amazon Search] Playwright fallback", flush=True)
     async with agent_lock:
         playwright_results = await agent.fast_search(query=query, limit=limit)
-    print(f"[Search] Amazon method=Playwright results={len(playwright_results)}", flush=True)
+    print(f"[Amazon Search] Playwright returned {len(playwright_results)} results", flush=True)
     return playwright_results
 
 

@@ -1268,8 +1268,9 @@ class AmazonAgent:
 
     async def fast_search_temu(self, query: str, limit: int = 3) -> list[ProductResult]:
         api_key = os.getenv("SERPAPI_API_KEY")
+        print(f"[Temu Search] SerpAPI Key found: {bool(api_key)}", flush=True)
         if not api_key:
-            print("[Temu Search] Missing SERPAPI_API_KEY", flush=True)
+            print("[Temu Search] Missing SERPAPI_API_KEY - returning empty", flush=True)
             return []
         url = "https://serpapi.com/search.json"
         params = {
@@ -1285,10 +1286,11 @@ class AmazonAgent:
                 response = await client.get(url, params=params)
             print(f"[Temu Search] HTTP status={response.status_code}", flush=True)
             if response.status_code >= 400:
-                print(f"[Temu Search] Error: {response.text[:300]}", flush=True)
+                print(f"[Temu Search] API Error: {response.text[:300]}", flush=True)
                 return []
             data = response.json()
             items = data.get("shopping_results", []) or []
+            print(f"[Temu Search] Google Shopping returned {len(items)} raw items", flush=True)
             results: list[ProductResult] = []
             for item in items[:limit]:
                 source = (item.get("source") or "").lower()
@@ -1313,10 +1315,10 @@ class AmazonAgent:
                         variations=[],
                     )
                 )
-            print(f"[Temu Search] Found {len(results)} results", flush=True)
+            print(f"[Temu Search] Found {len(results)} Temu results after filter", flush=True)
             return results
         except Exception as exc:
-            print(f"[Temu Search] Failed: {exc}", flush=True)
+            print(f"[Temu Search] Failed with exception: {exc}", flush=True)
             return []
 
     async def fast_search_http_provider(self, site: str, query: str, limit: int = 3) -> list[ProductResult]:
