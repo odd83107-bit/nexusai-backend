@@ -14,6 +14,7 @@ from urllib.parse import quote_plus
 
 import requests
 import urllib3
+from cachetools import TTLCache
 from deep_translator import GoogleTranslator
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,6 +53,7 @@ SEARCH_CACHE_TTL_SECONDS = 60 * 60
 SEARCH_CACHE_PATH = Path("search_cache.json")
 INLINE_SEARCH_TIMEOUT_SECONDS = 2.8
 PER_PROVIDER_TIMEOUT_SECONDS = 2.5
+SEARCH_MEMORY_CACHE = TTLCache(maxsize=1000, ttl=7200)
 HTTP_PROVIDER_SITES = (
     "nike",
     "adidas",
@@ -548,11 +550,15 @@ def _search_cache_key(query: str, limit: int) -> str:
 
 
 def _read_cached_search(cache_key: str) -> list[ProductResponse] | None:
-    cache = _load_search_cache()
-    entry = cache.get(cache_key)
+    entry = SEARCH_MEMORY_CACHE.get(cache_key)
+    source = "memory"
+    if entry is None:
+        entry = _load_search_cache().get(cache_key)
+        source = "disk"
     if not entry:
         return None
     if time.time() - entry.get("created_at", 0) > SEARCH_CACHE_TTL_SECONDS:
+        SEARCH_MEMORY_CACHE.pop(cache_key, None)
         return None
     cached_results = entry.get("results", [])
     if not cached_results:
@@ -566,12 +572,15 @@ def _read_cached_search(cache_key: str) -> list[ProductResponse] | None:
             print(f"[Filter] Dropped unrelated cached item from {item.get('site')}: {item.get('title')!r}", flush=True)
             continue
         normalized_results.append(ProductResponse(**item))
+    if normalized_results:
+        SEARCH_MEMORY_CACHE[cache_key] = entry
+        print(f"[Cache] Hit from {source} key={cache_key} results={len(normalized_results)}", flush=True)
     return normalized_results or None
 
 
 def _write_cached_search(cache_key: str, results: list[ProductResponse], products: list[ProductResult]) -> None:
     cache = _load_search_cache()
-    cache[cache_key] = {
+    entry = {
         "created_at": time.time(),
         "results": [result.model_dump() for result in results],
         "products": [
@@ -588,6 +597,8 @@ def _write_cached_search(cache_key: str, results: list[ProductResponse], product
             for product in products
         ],
     }
+    cache[cache_key] = entry
+    SEARCH_MEMORY_CACHE[cache_key] = entry
     SEARCH_CACHE_PATH.write_text(json.dumps(cache), encoding="utf-8")
 
 
@@ -601,8 +612,9 @@ def _load_search_cache() -> dict[str, Any]:
 
 
 def _restore_product_by_nexus_id(nexus_id: str) -> ProductResult | None:
-    cache = _load_search_cache()
-    for entry in cache.values():
+    entries = list(SEARCH_MEMORY_CACHE.values())
+    entries.extend(_load_search_cache().values())
+    for entry in entries:
         if time.time() - entry.get("created_at", 0) > SEARCH_CACHE_TTL_SECONDS:
             continue
         for product in entry.get("products", []):
@@ -620,8 +632,9 @@ def _restore_product_by_nexus_id(nexus_id: str) -> ProductResult | None:
 
 
 def _restore_cached_products(cache_key: str) -> None:
-    cache = _load_search_cache()
-    entry = cache.get(cache_key)
+    entry = SEARCH_MEMORY_CACHE.get(cache_key)
+    if entry is None:
+        entry = _load_search_cache().get(cache_key)
     if not entry or time.time() - entry.get("created_at", 0) > SEARCH_CACHE_TTL_SECONDS:
         return
     for product in entry.get("products", []):

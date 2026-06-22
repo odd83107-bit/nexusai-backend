@@ -700,7 +700,7 @@ class AmazonAgent:
                 const results = [];
                 const seen = new Set();
                 const nodes = Array.from(document.querySelectorAll('[class*="sku"], [class*="Sku"], [class*="option"], [class*="Option"], [class*="property"], [class*="Property"]'));
-                const clean = (value) => (value || '').replace(/\s+/g, ' ').trim();
+                const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
                 for (const node of nodes) {
                     const groupText = clean(node.innerText || node.textContent);
                     const type = /color|colour|צבע/i.test(groupText) ? 'color' : /size|מידה|shoe/i.test(groupText) ? 'size' : 'option';
