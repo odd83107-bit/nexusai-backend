@@ -194,7 +194,16 @@ class AmazonAgent:
             href = await self._safe_attribute(link_locator, "href")
             url = f"https://www.amazon.com{href}" if href and href.startswith("/") else href
             url = self.normalize_product_url(url)
-            image = await self._safe_attribute(image_locator, "src")
+            image_raw = await self._safe_attribute(image_locator, "data-a-dynamic-image")
+            if image_raw:
+                try:
+                    import json as _json
+                    dyn = _json.loads(image_raw)
+                    image = max(dyn.keys(), key=lambda u: (dyn[u][0][0] if dyn[u] else 0)) if isinstance(dyn, dict) and dyn else image_raw
+                except Exception:
+                    image = image_raw
+            else:
+                image = await self._safe_attribute(image_locator, "src")
             nexus_id = self._build_nexus_id("amazon", url or title)
 
             results.append(
@@ -236,7 +245,16 @@ class AmazonAgent:
             href = await self._safe_attribute(link_locator, "href")
             url = f"https://www.amazon.com{href}" if href and href.startswith("/") else href
             url = self.normalize_product_url(url)
-            image = await self._safe_attribute(image_locator, "src")
+            image_raw = await self._safe_attribute(image_locator, "data-a-dynamic-image")
+            if image_raw:
+                try:
+                    import json as _json
+                    dyn = _json.loads(image_raw)
+                    image = max(dyn.keys(), key=lambda u: (dyn[u][0][0] if dyn[u] else 0)) if isinstance(dyn, dict) and dyn else image_raw
+                except Exception:
+                    image = image_raw
+            else:
+                image = await self._safe_attribute(image_locator, "src")
             nexus_id = self._build_nexus_id("amazon", url or title)
 
             results.append(
@@ -1292,11 +1310,14 @@ class AmazonAgent:
             items = data.get("shopping_results", []) or []
             print(f"[Temu Search] Google Shopping returned {len(items)} raw items", flush=True)
             results: list[ProductResult] = []
-            for item in items[:limit]:
+            print(f"[Temu Search] Scanning up to {min(len(items),10)} items for Temu results", flush=True)
+            for item in items[:10]:
                 source = (item.get("source") or "").lower()
                 link = item.get("link") or ""
                 if "temu" not in source and "temu" not in link.lower():
                     continue
+                if len(results) >= limit:
+                    break
                 title = item.get("title") or ""
                 price = item.get("price") or None
                 thumbnail = item.get("thumbnail") or item.get("image") or None
@@ -1494,7 +1515,7 @@ class AmazonAgent:
                     title=title,
                     price=cls._extract_generic_provider_price(block),
                     url=product_url,
-                    image=cls._extract_generic_provider_image(block),
+                    image=cls._normalize_relative_image(cls._extract_generic_provider_image(block), str(config.get("base_url", ""))),
                     variations=[],
                     provider_name=PROVIDER_NAMES.get(site, site),
                 )
@@ -1632,6 +1653,14 @@ class AmazonAgent:
             value = lowered.get(key.lower())
             if isinstance(value, (str, int, float)) and str(value).strip():
                 return html.unescape(str(value)).strip()
+            if isinstance(value, list):
+                for elem in value:
+                    if isinstance(elem, str) and elem.strip():
+                        return html.unescape(elem).strip()
+                    if isinstance(elem, dict):
+                        nested = AmazonAgent._json_first_text(elem, keys)
+                        if nested:
+                            return nested
             if isinstance(value, dict):
                 nested = AmazonAgent._json_first_text(value, keys)
                 if nested:
@@ -1689,7 +1718,7 @@ class AmazonAgent:
                     title=title,
                     price=cls._extract_generic_provider_price(block),
                     url=product_url,
-                    image=cls._extract_generic_provider_image(block),
+                    image=cls._normalize_relative_image(cls._extract_generic_provider_image(block), str(config.get("base_url", ""))),
                     variations=variations,
                     provider_name=PROVIDER_NAMES.get(site, site),
                 )
@@ -1778,12 +1807,37 @@ class AmazonAgent:
         return None
 
     @staticmethod
+    def _normalize_relative_image(image: str | None, base_url: str) -> str | None:
+        if not image or image.startswith("http") or image.startswith("//"):
+            return image
+        if base_url:
+            return f"{base_url.rstrip('/')}/{image.lstrip('/')}"
+        return None
+
+    @staticmethod
     def _extract_generic_provider_image(block: str) -> str | None:
-        match = re.search(r'(https?:)?//[^"\'<\s]+?\.(?:jpg|jpeg|png|webp)(?:[^"\'<\s]*)?', block, re.IGNORECASE)
-        if not match:
-            return None
-        image = html.unescape(match.group(0))
-        return f"https:{image}" if image.startswith("//") else image
+        _SKIP = ("placeholder", "nogray", "yes.png", "no.png", "stock/", "spinner",
+                 "loading", "blank", "default", "nophoto", "noimage", "logo")
+        for attr in ("data-src", "data-lazy", "src"):
+            for m in re.finditer(
+                attr + r"""=["\']([^"\'> ]+\.(?:jpg|jpeg|png|webp|gif)[^"\'> ]*)["\']""",
+                block, re.IGNORECASE,
+            ):
+                raw = html.unescape(m.group(1)).strip()
+                if any(p in raw.lower() for p in _SKIP):
+                    continue
+                if raw.startswith("//"):
+                    return f"https:{raw}"
+                if raw.startswith("http"):
+                    return raw
+                if raw and not raw.startswith("#"):
+                    return raw
+        full_url = re.search(r'(https?://[^"\'<\s]+?\.(?:jpg|jpeg|png|webp)(?:[^"\'<\s]*)?)', block, re.IGNORECASE)
+        if full_url:
+            raw = html.unescape(full_url.group(1))
+            if not any(p in raw.lower() for p in _SKIP):
+                return raw
+        return None
 
     @staticmethod
     def _israeli_provider_headers(base_url: str) -> dict[str, str]:

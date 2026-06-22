@@ -484,7 +484,9 @@ def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
     for card in cards:
         title_match = re.search(r'<h2[\s\S]*?<span[^>]*>(.*?)</span>', card)
         href_match = re.search(r'<a[^>]+class="[^"]*a-link-normal[^"]*"[^>]+href="([^"]+)"', card)
-        image_match = re.search(r'<img[^>]+class="[^"]*s-image[^"]*"[^>]+src="([^"]+)"', card)
+        image_match = re.search(r'<img[^>]+class="[^"]*s-image[^"]*"[^>]+data-a-dynamic-image="([^"]+)"', card)
+        if not image_match:
+            image_match = re.search(r'<img[^>]+class="[^"]*s-image[^"]*"[^>]+src="([^"]+)"', card)
         price_match = re.search(r'<span[^>]+class="a-offscreen"[^>]*>(.*?)</span>', card)
         if not title_match:
             continue
@@ -496,7 +498,20 @@ def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
         href = html.unescape(href_match.group(1)) if href_match else None
         url = f"https://www.amazon.com{href}" if href and href.startswith("/") else href
         url = AmazonAgent.normalize_product_url(url)
-        image = html.unescape(image_match.group(1)) if image_match else None
+        if image_match:
+            raw_image = html.unescape(image_match.group(1))
+            # data-a-dynamic-image is JSON: {"https://...":[[w,h],...], ...}
+            try:
+                import json as _json
+                dyn = _json.loads(raw_image)
+                if isinstance(dyn, dict) and dyn:
+                    image = max(dyn.keys(), key=lambda u: (dyn[u][0][0] if dyn[u] else 0))
+                else:
+                    image = raw_image
+            except Exception:
+                image = raw_image
+        else:
+            image = None
         price = html.unescape(price_match.group(1)).strip() if price_match else None
         nexus_id = AmazonAgent._build_nexus_id("amazon", url or title)
 
