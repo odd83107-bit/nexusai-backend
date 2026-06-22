@@ -51,8 +51,9 @@ def print(*args: Any, **kwargs: Any) -> None:
 FAST_SEARCH_LIMIT_PER_SITE = 3
 SEARCH_CACHE_TTL_SECONDS = 60 * 60
 SEARCH_CACHE_PATH = Path("search_cache.json")
-INLINE_SEARCH_TIMEOUT_SECONDS = 2.8
+INLINE_SEARCH_TIMEOUT_SECONDS = 5.5
 PER_PROVIDER_TIMEOUT_SECONDS = 2.5
+AMAZON_PROVIDER_TIMEOUT_SECONDS = 5.0
 SEARCH_MEMORY_CACHE = TTLCache(maxsize=1000, ttl=7200)
 HTTP_PROVIDER_SITES = (
     "nike",
@@ -364,7 +365,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
         print(f"[Search] Original query='{query}' translated='{amazon_query}'", flush=True)
         per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
         provider_tasks = [
-            _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), AMAZON_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("temu", _fast_search_temu(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("next", _fast_search_next(query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
