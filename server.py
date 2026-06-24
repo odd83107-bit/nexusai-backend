@@ -362,15 +362,16 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
     try:
         source_language = _detect_source_language(query)
         amazon_query = _search_query_for_amazon(query, source_language)
-        print(f"[Search] Original query='{query}' translated='{amazon_query}'", flush=True)
+        hebrew_query = _translate_text(query, source=source_language, target="iw") if source_language == "en" else query
+        print(f"[Search] Original query='{query}' en='{amazon_query}' he='{hebrew_query}'", flush=True)
         per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
         provider_tasks = [
             _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), AMAZON_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("temu", _fast_search_temu(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
-            _run_with_timeout("next", _fast_search_next(query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("next", _fast_search_next(hebrew_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             *[
-                _run_with_timeout(site, _fast_search_http_provider(site, query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS)
+                _run_with_timeout(site, _fast_search_http_provider(site, hebrew_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS)
                 for site in HTTP_PROVIDER_SITES
             ],
         ]
@@ -387,7 +388,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
             for result in provider_result:
                 if result.site != site:
                     continue
-                if not AmazonAgent.is_title_relevant(query, result.title):
+                if not (AmazonAgent.is_title_relevant(query, result.title) or AmazonAgent.is_title_relevant(hebrew_query, result.title)):
                     print(f"[Filter] Dropped unrelated item from {site}: {result.title!r}", flush=True)
                     continue
                 print(f"[Filter] Kept {result.title!r} for query {query!r}", flush=True)
