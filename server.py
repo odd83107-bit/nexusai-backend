@@ -369,7 +369,10 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
         print(f"[Search] Original query='{query}' en='{amazon_query}' he='{hebrew_query}'", flush=True)
         per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
         def _http_query_for_site(site: str) -> str:
-            return query if site in FASHION_HTTP_SITES else hebrew_query
+            # Fashion sites work best with English queries, even when the user typed in Hebrew.
+            if site in FASHION_HTTP_SITES:
+                return amazon_query if source_language == "iw" else query
+            return hebrew_query
 
         provider_tasks = [
             _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), AMAZON_PROVIDER_TIMEOUT_SECONDS),
@@ -394,7 +397,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
             for result in provider_result:
                 if result.site != site:
                     continue
-                if not (AmazonAgent.is_title_relevant(query, result.title) or AmazonAgent.is_title_relevant(hebrew_query, result.title)):
+                if not (AmazonAgent.is_title_relevant(query, result.title) or AmazonAgent.is_title_relevant(hebrew_query, result.title) or AmazonAgent.is_title_relevant(amazon_query, result.title)):
                     print(f"[Filter] Dropped unrelated item from {site}: {result.title!r}", flush=True)
                     continue
                 print(f"[Filter] Kept {result.title!r} for query {query!r}", flush=True)

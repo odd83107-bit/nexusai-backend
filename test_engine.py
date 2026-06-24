@@ -56,7 +56,7 @@ DEFAULT_QUERIES = [
     "watch",
     "keyboard",
     "monitor",
-    " SSD ",
+    "SSD",
     "camera",
     "adidas shoes",
     "flashlight",
@@ -103,11 +103,18 @@ def _relevance_score(query: str, title: str) -> float:
     if not q_tokens:
         return 1.0
     normalized_title = _normalize(title)
-    title_tokens = set(re.findall(r"[\u0590-\u05ff]+|[a-zA-Z0-9]{2,}", normalized_title))
-    matches = q_tokens & title_tokens
-    # Also check substring match (e.g., "iphone" in "Apple iPhone 15")
-    substring_matches = sum(1 for t in q_tokens if t in normalized_title)
-    return max(len(matches) / len(q_tokens), substring_matches / len(q_tokens))
+    title_tokens = set(re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title))
+    matched = 0
+    for t in q_tokens:
+        is_hebrew = any("\u0590" <= c <= "\u05ff" for c in t)
+        if is_hebrew:
+            prefixes = "לבוכמשהו"
+            if t in title_tokens or any(tok.startswith(p) and tok[len(p):] == t for tok in title_tokens for p in prefixes):
+                matched += 1
+        else:
+            if t in title_tokens or t in normalized_title:
+                matched += 1
+    return matched / len(q_tokens)
 
 
 def _image_score(image_url: str | None) -> int:
@@ -226,7 +233,7 @@ async def _run_query(base_url: str, query: str, limit: int, timeout: float) -> P
 
 
 async def _run_bulk(base_url: str, queries: list[str], limit: int, timeout: float) -> list[ProductReport]:
-    semaphore = asyncio.Semaphore(5)
+    semaphore = asyncio.Semaphore(2)
 
     async def _bounded(query: str) -> ProductReport:
         async with semaphore:
@@ -282,7 +289,7 @@ def _write_json_report(reports: list[ProductReport], path: str = "test_engine_re
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="NexusAI search quality test engine")
-    parser.add_argument("--url", default="http://127.0.0.1:8000", help="Base URL of the server")
+    parser.add_argument("--url", default="https://nexusai-backend-production-b8c5.up.railway.app", help="Base URL of the server")
     parser.add_argument("--limit", type=int, default=5, help="Results per provider")
     parser.add_argument("--timeout", type=float, default=25.0, help="Max seconds per query")
     parser.add_argument("--queries", nargs="+", help="Override the default query list")
@@ -290,6 +297,7 @@ def main() -> None:
 
     queries = args.queries or DEFAULT_QUERIES
     print(f"Running bulk test against {args.url} with {len(queries)} queries...")
+    print(f"Concurrency=2, limit={args.limit}, timeout={args.timeout}s")
     reports = asyncio.run(_run_bulk(args.url, queries, args.limit, args.timeout))
     _print_report(reports)
     _write_json_report(reports)
