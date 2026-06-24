@@ -553,11 +553,18 @@ class AmazonAgent:
         normalized_title = re.sub(r"\s+", " ", html.unescape(title)).lower()
         title_tokens = {token.lower() for token in re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title)}
         for token in tokens:
-            if token in normalized_title or token in title_tokens:
+            token_lower = token.lower()
+            is_hebrew = any("\u0590" <= c <= "\u05ff" for c in token_lower)
+            # Hebrew tokens must match a full word to avoid "פנס" matching "פנסוניק".
+            if is_hebrew:
+                if token_lower in title_tokens:
+                    return True
+            else:
+                if token_lower in title_tokens or token_lower in normalized_title:
+                    return True
+            if any(token_lower.startswith(title_token) or title_token.startswith(token_lower) for title_token in title_tokens if len(token_lower) >= 3 and len(title_token) >= 3):
                 return True
-            if any(token.startswith(title_token) or title_token.startswith(token) for title_token in title_tokens if len(token) >= 3 and len(title_token) >= 3):
-                return True
-            if len(token) >= 5 and any(title_token.startswith(token[:5]) or token.startswith(title_token[:5]) for title_token in title_tokens if len(title_token) >= 5):
+            if len(token_lower) >= 5 and any(title_token.startswith(token_lower[:5]) or token_lower.startswith(title_token[:5]) for title_token in title_tokens if len(title_token) >= 5):
                 return True
         return False
 
