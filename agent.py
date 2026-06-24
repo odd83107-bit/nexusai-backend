@@ -552,21 +552,35 @@ class AmazonAgent:
             return True
         normalized_title = re.sub(r"\s+", " ", html.unescape(title)).lower()
         title_tokens = {token.lower() for token in re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title)}
+        matched = 0
         for token in tokens:
             token_lower = token.lower()
             is_hebrew = any("\u0590" <= c <= "\u05ff" for c in token_lower)
-            # Hebrew tokens must match a full word to avoid "פנס" matching "פנסוניק".
             if is_hebrew:
+                # Hebrew tokens must match a full word. Also allow standard prefixes (ל, ב, כ, מ, ש, ה, ו).
                 if token_lower in title_tokens:
-                    return True
+                    matched += 1
+                else:
+                    prefixes = "לבוכמשהו"
+                    if any(t.startswith(p) and t[len(p):] == token_lower for t in title_tokens for p in prefixes):
+                        matched += 1
             else:
+                # English/other tokens: exact word, substring, or prefix match.
                 if token_lower in title_tokens or token_lower in normalized_title:
-                    return True
-            if any(token_lower.startswith(title_token) or title_token.startswith(token_lower) for title_token in title_tokens if len(token_lower) >= 3 and len(title_token) >= 3):
-                return True
-            if len(token_lower) >= 5 and any(title_token.startswith(token_lower[:5]) or token_lower.startswith(title_token[:5]) for title_token in title_tokens if len(title_token) >= 5):
-                return True
-        return False
+                    matched += 1
+                elif any(token_lower.startswith(t) or t.startswith(token_lower) for t in title_tokens if len(token_lower) >= 3 and len(t) >= 3):
+                    matched += 1
+                elif len(token_lower) >= 5 and any(t.startswith(token_lower[:5]) or token_lower.startswith(t[:5]) for t in title_tokens if len(t) >= 5):
+                    matched += 1
+
+        score = matched / len(tokens)
+        # Hebrew queries are strict: all Hebrew tokens must be present to avoid false positives like "פנס" in "פנסוניק".
+        if any("\u0590" <= c <= "\u05ff" for c in query.lower()):
+            return score >= 1.0
+        # English queries: at least half of the tokens must match (or the only token).
+        if len(tokens) == 1:
+            return score >= 1.0
+        return score >= 0.5
 
     async def fast_search_aliexpress(self, query: str, limit: int = 3) -> list[ProductResult]:
         search_slug = quote_plus(query).replace("+", "-")
