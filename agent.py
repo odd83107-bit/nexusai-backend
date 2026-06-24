@@ -565,12 +565,12 @@ class AmazonAgent:
                     if any(t.startswith(p) and t[len(p):] == token_lower for t in title_tokens for p in prefixes):
                         matched += 1
             else:
-                # English/other tokens: exact word, substring, or prefix match.
-                if token_lower in title_tokens or token_lower in normalized_title:
+                # English/other tokens: exact word, or word-boundary substring, or prefix match with boundary.
+                if token_lower in title_tokens:
                     matched += 1
-                elif any(token_lower.startswith(t) or t.startswith(token_lower) for t in title_tokens if len(token_lower) >= 3 and len(t) >= 3):
+                elif re.search(r"(?<!\w)" + re.escape(token_lower) + r"(?!\w)", normalized_title):
                     matched += 1
-                elif len(token_lower) >= 5 and any(t.startswith(token_lower[:5]) or token_lower.startswith(t[:5]) for t in title_tokens if len(t) >= 5):
+                elif any(token_lower.startswith(t) or (t.startswith(token_lower) and not re.match(r"[a-z0-9]", t[len(token_lower):])) for t in title_tokens if len(token_lower) >= 3 and len(t) >= 3):
                     matched += 1
 
         score = matched / len(tokens)
