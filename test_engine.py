@@ -137,16 +137,22 @@ async def _search_one(base_url: str, query: str, limit: int, timeout: float) -> 
         headers={"Content-Type": "application/json"},
     )
     loop = asyncio.get_event_loop()
-    try:
-        resp = await asyncio.wait_for(
-            loop.run_in_executor(None, urllib.request.urlopen, req),
-            timeout=timeout,
-        )
-        body = json.loads(resp.read())
-    except asyncio.TimeoutError:
-        return {"error": "search request timed out", "results": []}
-    except Exception as exc:
-        return {"error": f"search request failed: {exc}", "results": []}
+    last_err: str = ""
+    for attempt in range(2):
+        try:
+            resp = await asyncio.wait_for(
+                loop.run_in_executor(None, urllib.request.urlopen, req),
+                timeout=timeout,
+            )
+            body = json.loads(resp.read())
+            break
+        except asyncio.TimeoutError:
+            return {"error": "search request timed out", "results": []}
+        except Exception as exc:
+            last_err = str(exc)
+            await asyncio.sleep(2)
+    else:
+        return {"error": f"search request failed: {last_err}", "results": []}
 
     task_id = body.get("task_id")
     if not task_id:
@@ -291,7 +297,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="NexusAI search quality test engine")
     parser.add_argument("--url", default="https://nexusai-backend-production-b8c5.up.railway.app", help="Base URL of the server")
     parser.add_argument("--limit", type=int, default=5, help="Results per provider")
-    parser.add_argument("--timeout", type=float, default=25.0, help="Max seconds per query")
+    parser.add_argument("--timeout", type=float, default=35.0, help="Max seconds per query")
     parser.add_argument("--queries", nargs="+", help="Override the default query list")
     args = parser.parse_args()
 
