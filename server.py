@@ -435,6 +435,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
                     continue
                 print(f"[Filter] Kept {result.title!r} for query {query!r}", flush=True)
                 relevant_results.append(result)
+            print(f"[Search Summary] {site}: raw={len(provider_result)} filtered={len(relevant_results)}", flush=True)
             capped = relevant_results[:per_site_limit]
             counts[site] = len(capped)
             results.extend(capped)
@@ -511,12 +512,15 @@ def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9",
     }
+    url = f"https://www.amazon.com/s?k={quote_plus(query)}"
+    print(f"[Amazon HTTP] Requesting {url}", flush=True)
     response = requests.get(
-        f"https://www.amazon.com/s?k={quote_plus(query)}",
+        url,
         headers=headers,
-        timeout=3,
+        timeout=8,
         verify=False,
     )
+    print(f"[Amazon HTTP] status={response.status_code} cards={len(re.findall(r'<div[^>]+data-component-type="s-search-result"', response.text))} len={len(response.text)}", flush=True)
     response.raise_for_status()
 
     results: list[ProductResult] = []
