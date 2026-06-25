@@ -74,6 +74,71 @@ QUERY_SYNONYMS = {
     "jeans": {"מכנס", "מכנסיים", "מכנסי", "ג'ינס", "טייץ", "שורטס", "ברמודה", "pants", "trousers", "jeans", "shorts", "leggings"},
     "shorts": {"מכנס", "מכנסיים", "מכנסי", "ג'ינס", "טייץ", "שורטס", "ברמודה", "pants", "trousers", "jeans", "shorts", "leggings"},
     "leggings": {"מכנס", "מכנסיים", "מכנסי", "ג'ינס", "טייץ", "שורטס", "ברמודה", "pants", "trousers", "jeans", "shorts", "leggings"},
+    # Hebrew <-> English product category mappings
+    "שעון": {"שעון", "שעונים", "watch", "watches", "clock", "timepiece", "smartwatch"},
+    "watch": {"שעון", "שעונים", "watch", "watches", "wrist", "smartwatch"},
+    "אוזניות": {"אוזניות", "אוזנייה", "headphones", "headphone", "earphones", "earbuds", "headset"},
+    "headphones": {"אוזניות", "אוזנייה", "headphones", "headphone", "earphones", "earbuds", "headset"},
+    "earphones": {"אוזניות", "אוזנייה", "headphones", "earphones", "earbuds"},
+    "כוס": {"כוס", "כוסות", "cup", "mug", "tumbler", "bottle", "thermos"},
+    "תרמית": {"תרמית", "תרמוס", "thermos", "insulated", "vacuum", "tumbler", "thermal"},
+    "thermos": {"תרמית", "תרמוס", "thermos", "insulated", "tumbler", "thermal"},
+    "מחשב": {"מחשב", "מחשבים", "computer", "laptop", "pc", "notebook", "desktop"},
+    "laptop": {"מחשב", "מחשבים", "laptop", "notebook", "computer", "pc"},
+    "מקלדת": {"מקלדת", "מקלדות", "keyboard", "keyboards"},
+    "keyboard": {"מקלדת", "מקלדות", "keyboard", "keyboards"},
+    "עכבר": {"עכבר", "עכברים", "mouse", "mice", "trackpad"},
+    "mouse": {"עכבר", "עכברים", "mouse", "mice"},
+    "מסך": {"מסך", "מסכים", "monitor", "screen", "display"},
+    "monitor": {"מסך", "מסכים", "monitor", "screen", "display"},
+    "מצלמה": {"מצלמה", "מצלמות", "camera", "cameras", "webcam"},
+    "camera": {"מצלמה", "מצלמות", "camera", "cameras", "webcam"},
+    "טלפון": {"טלפון", "טלפונים", "phone", "smartphone", "mobile", "iphone", "android"},
+    "phone": {"טלפון", "טלפונים", "phone", "smartphone", "mobile"},
+    "מטען": {"מטען", "מטענים", "charger", "charging", "adapter", "cable"},
+    "charger": {"מטען", "מטענים", "charger", "charging", "adapter"},
+    "כבל": {"כבל", "כבלים", "cable", "cables", "cord", "wire"},
+    "cable": {"כבל", "כבלים", "cable", "cables", "cord"},
+    "מדפסת": {"מדפסת", "מדפסות", "printer", "printers"},
+    "printer": {"מדפסת", "מדפסות", "printer", "printers"},
+    "ספר": {"ספר", "ספרים", "book", "books"},
+    "book": {"ספר", "ספרים", "book", "books"},
+    "שמיכה": {"שמיכה", "שמיכות", "blanket", "blankets", "comforter", "duvet"},
+    "blanket": {"שמיכה", "שמיכות", "blanket", "comforter", "duvet"},
+    "כרית": {"כרית", "כריות", "pillow", "pillows", "cushion"},
+    "pillow": {"כרית", "כריות", "pillow", "pillows", "cushion"},
+    "מזרן": {"מזרן", "מזרנים", "mattress", "mattresses"},
+    "mattress": {"מזרן", "מזרנים", "mattress", "mattresses"},
+    "מגבת": {"מגבת", "מגבות", "towel", "towels"},
+    "towel": {"מגבת", "מגבות", "towel", "towels"},
+    "תיק": {"תיק", "תיקים", "bag", "bags", "backpack", "purse", "handbag"},
+    "bag": {"תיק", "תיקים", "bag", "bags", "backpack"},
+    "backpack": {"תיק", "תיקים", "backpack", "bag", "rucksack"},
+    "מכונת": {"מכונת", "מכונה", "machine", "maker", "device"},
+    "קפה": {"קפה", "coffee", "espresso", "cappuccino"},
+    "coffee": {"קפה", "coffee", "espresso"},
+    "כביסה": {"כביסה", "washing", "laundry", "washer"},
+    "washing": {"כביסה", "washing", "laundry", "washer"},
+    "מקרר": {"מקרר", "מקררים", "fridge", "refrigerator", "freezer"},
+    "fridge": {"מקרר", "מקררים", "fridge", "refrigerator"},
+    "טלוויזיה": {"טלוויזיה", "טלויזיה", "tv", "television", "screen", "display"},
+    "tv": {"טלוויזיה", "טלויזיה", "tv", "television"},
+    "דיסק": {"דיסק", "דיסקים", "disk", "drive", "ssd", "hdd", "storage"},
+    "ssd": {"דיסק", "דיסקים", "ssd", "solid", "drive", "storage"},
+    "פנס": {"פנס", "פנסים", "flashlight", "torch", "lantern", "light", "lamp"},
+    "flashlight": {"פנס", "פנסים", "flashlight", "torch", "light"},
+    "עיפרון": {"עיפרון", "עפרון", "עפרונות", "pencil", "pen"},
+    "pencil": {"עיפרון", "עפרון", "עפרונות", "pencil", "pen"},
+    "מברשת": {"מברשת", "מברשות", "brush", "toothbrush"},
+    "toothbrush": {"מברשת", "מברשות", "toothbrush", "brush"},
+    "בקבוק": {"בקבוק", "בקבוקים", "bottle", "water bottle", "flask"},
+    "bottle": {"בקבוק", "בקבוקים", "bottle", "flask"},
+    "כיסא": {"כיסא", "כיסאות", "chair", "seat", "stool"},
+    "chair": {"כיסא", "כיסאות", "chair", "seat"},
+    "שולחן": {"שולחן", "שולחנות", "table", "desk"},
+    "table": {"שולחן", "שולחנות", "table", "desk"},
+    "ארון": {"ארון", "ארונות", "wardrobe", "cabinet", "closet", "shelf"},
+    "wardrobe": {"ארון", "ארונות", "wardrobe", "cabinet", "closet"},
 }
 NO_RESULTS_PATTERNS = (
     "לא נמצאו תוצאות",
@@ -552,38 +617,42 @@ class AmazonAgent:
 
     @staticmethod
     def is_title_relevant(query: str, title: str) -> bool:
-        tokens = AmazonAgent.query_tokens(query)
-        if not tokens:
+        # Build ORIGINAL query tokens (no synonyms) and EXPANDED tokens (with synonyms) separately.
+        original_tokens = {t.lower() for t in re.findall(r"[\w\u0590-\u05ff'-]{2,}", query)}
+        expanded_tokens = AmazonAgent.query_tokens(query)  # includes synonyms
+        if not original_tokens:
             return True
+
         normalized_title = re.sub(r"\s+", " ", html.unescape(title)).lower()
         title_tokens = {token.lower() for token in re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title)}
-        matched = 0
-        for token in tokens:
-            token_lower = token.lower()
-            is_hebrew = any("\u0590" <= c <= "\u05ff" for c in token_lower)
-            if is_hebrew:
-                # Hebrew tokens must match a full word. Also allow standard prefixes (ל, ב, כ, מ, ש, ה, ו).
-                if token_lower in title_tokens:
-                    matched += 1
-                else:
-                    prefixes = "לבוכמשהו"
-                    if any(t.startswith(p) and t[len(p):] == token_lower for t in title_tokens for p in prefixes):
-                        matched += 1
-            else:
-                # English/other tokens: exact word, or word-boundary substring, or prefix match with boundary.
-                if token_lower in title_tokens:
-                    matched += 1
-                elif re.search(r"(?<!\w)" + re.escape(token_lower) + r"(?!\w)", normalized_title):
-                    matched += 1
-                elif any(token_lower.startswith(t) or (t.startswith(token_lower) and not re.match(r"[a-z0-9]", t[len(token_lower):])) for t in title_tokens if len(token_lower) >= 3 and len(t) >= 3):
-                    matched += 1
+        prefixes = "לבוכמשהו"
 
-        score = matched / len(tokens)
-        # Hebrew queries are strict: all Hebrew tokens must be present to avoid false positives like "פנס" in "פנסוניק".
-        if any("\u0590" <= c <= "\u05ff" for c in query.lower()):
+        def _token_matches(token_lower: str) -> bool:
+            """Check if token_lower (or any synonym) appears in title."""
+            candidates = {token_lower} | {s.lower() for s in expanded_tokens if s.lower() != token_lower}
+            for candidate in candidates:
+                is_hebrew = any("\u0590" <= c <= "\u05ff" for c in candidate)
+                if is_hebrew:
+                    if candidate in title_tokens:
+                        return True
+                    if any(t.startswith(p) and t[len(p):] == candidate for t in title_tokens for p in prefixes):
+                        return True
+                else:
+                    if candidate in title_tokens:
+                        return True
+                    if re.search(r"(?<!\w)" + re.escape(candidate) + r"(?!\w)", normalized_title):
+                        return True
+            return False
+
+        matched = sum(1 for t in original_tokens if _token_matches(t))
+        score = matched / len(original_tokens)
+
+        query_is_hebrew = any("\u0590" <= c <= "\u05ff" for c in query)
+        if query_is_hebrew:
+            # Strict: every Hebrew token in the original query must match (directly or via synonym).
             return score >= 1.0
-        # English queries: at least half of the tokens must match (or the only token).
-        if len(tokens) == 1:
+        # English queries: at least half the tokens must match.
+        if len(original_tokens) == 1:
             return score >= 1.0
         return score >= 0.5
 
