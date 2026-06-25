@@ -12,6 +12,7 @@ The report is printed to the terminal and also written to test_engine_report.jso
 import argparse
 import asyncio
 import json
+import re as _re
 import sys
 import time
 import urllib.request
@@ -79,41 +80,104 @@ class ProductReport:
     notes: list[str] = field(default_factory=list)
 
 
+_SYNONYMS: dict[str, set[str]] = {
+    "נעל": {"נעל", "נעלי", "נעליים", "סניקרס", "מגפיים", "כפכפים", "סנדלים", "shoe", "shoes", "sneaker", "sneakers", "boots", "sandals"},
+    "נעלי": {"נעל", "נעלי", "נעליים", "סניקרס", "shoe", "shoes", "sneaker", "sneakers"},
+    "נעליים": {"נעל", "נעלי", "נעליים", "סניקרס", "shoe", "shoes", "sneaker", "sneakers"},
+    "shoe": {"נעל", "נעלי", "נעליים", "סניקרס", "shoe", "shoes", "sneaker", "sneakers", "boots"},
+    "shoes": {"נעל", "נעלי", "נעליים", "סניקרס", "shoe", "shoes", "sneaker", "sneakers", "boots"},
+    "running": {"ריצה", "ריצת", "running", "runner", "jogging", "sport", "athletic"},
+    "ריצה": {"ריצה", "running", "runner", "jogging", "sport"},
+    "חולצה": {"חולצה", "חולצות", "shirt", "shirts", "tee", "t-shirt"},
+    "shirt": {"חולצה", "חולצות", "shirt", "shirts", "tee", "t-shirt"},
+    "שעון": {"שעון", "שעונים", "watch", "watches", "clock", "smartwatch"},
+    "watch": {"שעון", "שעונים", "watch", "watches", "wrist", "smartwatch"},
+    "אוזניות": {"אוזניות", "אוזנייה", "headphones", "headphone", "earphones", "earbuds", "headset"},
+    "headphones": {"אוזניות", "אוזנייה", "headphones", "headphone", "earphones", "earbuds"},
+    "כוס": {"כוס", "כוסות", "cup", "mug", "tumbler", "bottle", "thermos"},
+    "תרמית": {"תרמית", "תרמוס", "thermos", "insulated", "vacuum", "tumbler", "thermal"},
+    "thermos": {"תרמית", "תרמוס", "thermos", "insulated", "tumbler"},
+    "מחשב": {"מחשב", "מחשבים", "computer", "laptop", "pc", "notebook", "desktop"},
+    "laptop": {"מחשב", "מחשבים", "laptop", "notebook", "computer", "pc"},
+    "מקלדת": {"מקלדת", "מקלדות", "keyboard", "keyboards"},
+    "keyboard": {"מקלדת", "מקלדות", "keyboard", "keyboards"},
+    "מסך": {"מסך", "מסכים", "monitor", "screen", "display"},
+    "monitor": {"מסך", "מסכים", "monitor", "screen", "display"},
+    "מצלמה": {"מצלמה", "מצלמות", "camera", "cameras", "webcam"},
+    "camera": {"מצלמה", "מצלמות", "camera", "cameras", "webcam"},
+    "מטען": {"מטען", "מטענים", "charger", "charging", "adapter", "cable"},
+    "charger": {"מטען", "מטענים", "charger", "charging", "adapter"},
+    "מזרן": {"מזרן", "מזרנים", "mattress", "mattresses"},
+    "mattress": {"מזרן", "מזרנים", "mattress", "mattresses"},
+    "מגבת": {"מגבת", "מגבות", "towel", "towels"},
+    "towel": {"מגבת", "מגבות", "towel", "towels"},
+    "תיק": {"תיק", "תיקים", "bag", "bags", "backpack", "purse"},
+    "backpack": {"תיק", "תיקים", "backpack", "bag", "rucksack"},
+    "קפה": {"קפה", "coffee", "espresso", "cappuccino"},
+    "coffee": {"קפה", "coffee", "espresso"},
+    "כביסה": {"כביסה", "washing", "laundry", "washer"},
+    "washing": {"כביסה", "washing", "laundry", "washer"},
+    "דיסק": {"דיסק", "דיסקים", "disk", "drive", "ssd", "hdd", "storage"},
+    "ssd": {"דיסק", "דיסקים", "ssd", "solid", "drive", "storage"},
+    "פנס": {"פנס", "פנסים", "flashlight", "torch", "lantern", "light", "lamp"},
+    "flashlight": {"פנס", "פנסים", "flashlight", "torch", "light"},
+    "עיפרון": {"עיפרון", "עפרון", "עפרונות", "pencil", "pen"},
+    "pencil": {"עיפרון", "עפרון", "עפרונות", "pencil", "pen"},
+    "מברשת": {"מברשת", "מברשות", "brush", "toothbrush"},
+    "toothbrush": {"מברשת", "מברשות", "toothbrush", "brush"},
+    "בקבוק": {"בקבוק", "בקבוקים", "bottle", "flask"},
+    "bottle": {"בקבוק", "בקבוקים", "bottle", "flask"},
+    "מקרר": {"מקרר", "מקררים", "fridge", "refrigerator", "freezer"},
+    "fridge": {"מקרר", "מקררים", "fridge", "refrigerator"},
+    "עכבר": {"עכבר", "עכברים", "mouse", "mice"},
+    "mouse": {"עכבר", "עכברים", "mouse", "mice"},
+    "מכנסיים": {"מכנסיים", "מכנס", "pants", "trousers", "jeans", "shorts"},
+    "pants": {"מכנסיים", "מכנס", "pants", "trousers", "jeans", "shorts"},
+}
+_PREFIXES = "לבוכמשהו"
+
+
 def _normalize(text: str) -> str:
     return " ".join(text.strip().lower().split())
 
 
 def _query_tokens(query: str) -> set[str]:
     """Extract meaningful tokens from a query (Hebrew + ASCII)."""
-    import re
     normalized = _normalize(query)
-    # Keep Hebrew words and ASCII words; ignore very short tokens
-    tokens = set(re.findall(r"[\u0590-\u05ff]+|[a-zA-Z0-9]{2,}", normalized))
-    # Remove common noise words
+    tokens = set(_re.findall(r"[\u0590-\u05ff]+|[a-zA-Z0-9]{2,}", normalized))
     noise = {"the", "and", "for", "with", "of", "in", "on", "at", "to", "a", "an"}
     return {t for t in tokens if t.lower() not in noise}
 
 
+def _token_matches_title(token: str, title_tokens: set[str], normalized_title: str) -> bool:
+    """Check if token or any synonym matches a word in the title."""
+    candidates = {token} | _SYNONYMS.get(token, set())
+    for c in candidates:
+        c = c.lower()
+        is_heb = any("\u0590" <= ch <= "\u05ff" for ch in c)
+        if is_heb:
+            if c in title_tokens:
+                return True
+            if any(t.startswith(p) and t[len(p):] == c for t in title_tokens for p in _PREFIXES):
+                return True
+        else:
+            if c in title_tokens:
+                return True
+            if _re.search(r"(?<!\w)" + _re.escape(c) + r"(?!\w)", normalized_title):
+                return True
+    return False
+
+
 def _relevance_score(query: str, title: str) -> float:
-    """Return a score between 0.0 and 1.0 based on token overlap."""
-    import re
+    """Return a score between 0.0 and 1.0 based on token overlap with synonym expansion."""
     if not title:
         return 0.0
     q_tokens = _query_tokens(query)
     if not q_tokens:
         return 1.0
     normalized_title = _normalize(title)
-    title_tokens = set(re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title))
-    matched = 0
-    for t in q_tokens:
-        is_hebrew = any("\u0590" <= c <= "\u05ff" for c in t)
-        if is_hebrew:
-            prefixes = "לבוכמשהו"
-            if t in title_tokens or any(tok.startswith(p) and tok[len(p):] == t for tok in title_tokens for p in prefixes):
-                matched += 1
-        else:
-            if t in title_tokens or t in normalized_title:
-                matched += 1
+    title_tokens = set(_re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title))
+    matched = sum(1 for t in q_tokens if _token_matches_title(t, title_tokens, normalized_title))
     return matched / len(q_tokens)
 
 
