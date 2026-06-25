@@ -504,7 +504,14 @@ async def _fast_search_amazon(query: str, limit: int) -> list[ProductResult]:
     async with agent_lock:
         playwright_results = await agent.fast_search(query=query, limit=limit)
     print(f"[Amazon Search] Playwright returned {len(playwright_results)} results", flush=True)
-    return playwright_results
+    if playwright_results:
+        return playwright_results
+
+    print("[Amazon Search] SerpAPI fallback", flush=True)
+    async with agent_lock:
+        serpapi_results = await agent.fast_search_amazon_serpapi(query=query, limit=limit)
+    print(f"[Amazon Search] SerpAPI returned {len(serpapi_results)} results", flush=True)
+    return serpapi_results
 
 
 def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
