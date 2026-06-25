@@ -302,12 +302,14 @@ async def _run_query(base_url: str, query: str, limit: int, timeout: float) -> P
     return report
 
 
-async def _run_bulk(base_url: str, queries: list[str], limit: int, timeout: float) -> list[ProductReport]:
-    semaphore = asyncio.Semaphore(2)
+async def _run_bulk(base_url: str, queries: list[str], limit: int, timeout: float, concurrency: int = 1) -> list[ProductReport]:
+    semaphore = asyncio.Semaphore(concurrency)
 
     async def _bounded(query: str) -> ProductReport:
         async with semaphore:
-            return await _run_query(base_url, query, limit, timeout)
+            result = await _run_query(base_url, query, limit, timeout)
+            await asyncio.sleep(0.5)
+            return result
 
     tasks = [_bounded(q) for q in queries]
     return await asyncio.gather(*tasks)
@@ -363,12 +365,13 @@ def main() -> None:
     parser.add_argument("--limit", type=int, default=5, help="Results per provider")
     parser.add_argument("--timeout", type=float, default=35.0, help="Max seconds per query")
     parser.add_argument("--queries", nargs="+", help="Override the default query list")
+    parser.add_argument("--concurrency", type=int, default=1, help="Parallel queries (default 1 to avoid Railway overload)")
     args = parser.parse_args()
 
     queries = args.queries or DEFAULT_QUERIES
     print(f"Running bulk test against {args.url} with {len(queries)} queries...")
-    print(f"Concurrency=2, limit={args.limit}, timeout={args.timeout}s")
-    reports = asyncio.run(_run_bulk(args.url, queries, args.limit, args.timeout))
+    print(f"Concurrency={args.concurrency}, limit={args.limit}, timeout={args.timeout}s")
+    reports = asyncio.run(_run_bulk(args.url, queries, args.limit, args.timeout, args.concurrency))
     _print_report(reports)
     _write_json_report(reports)
 
