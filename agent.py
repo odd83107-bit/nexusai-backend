@@ -1503,6 +1503,74 @@ class AmazonAgent:
                 except Exception as exc:
                     print(f"[Amazon SerpAPI] Shopping variant={variant!r} failed: {exc}", flush=True)
 
+        # If we still have no results, try a broad Google Shopping search and return
+        # any relevant results from any source (e.g., Nike, Adidas, Zappos, DSW) for fashion queries.
+        if not all_results:
+            print("[Amazon SerpAPI] Amazon-specific results empty, trying broad Google Shopping", flush=True)
+            broad_variants = [query]
+            if "adidas" in normalized:
+                broad_variants.append("adidas shoes")
+            if "running" in normalized:
+                broad_variants.append("running shoes")
+            if "nike" in normalized:
+                broad_variants.append("nike shoes")
+            if "sneakers" in normalized:
+                broad_variants.append("sneakers")
+            broad_variants = list(dict.fromkeys(broad_variants))
+            for variant in broad_variants:
+                if len(all_results) >= limit:
+                    break
+                params = {
+                    "engine": "google_shopping",
+                    "q": variant,
+                    "api_key": api_key,
+                    "gl": "us",
+                    "hl": "en",
+                    "tbm": "shop",
+                }
+                try:
+                    async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+                        response = await client.get(url, params=params)
+                    print(f"[Amazon SerpAPI] Broad Shopping variant={variant!r} status={response.status_code}", flush=True)
+                    if response.status_code >= 400:
+                        print(f"[Amazon SerpAPI] Broad Shopping error: {response.text[:300]}", flush=True)
+                        continue
+                    data = response.json()
+                    items = data.get("shopping_results", []) or []
+                    print(f"[Amazon SerpAPI] Broad Shopping variant={variant!r} raw={len(items)}", flush=True)
+                    for item in items[:15]:
+                        if len(all_results) >= limit:
+                            break
+                        source = (item.get("source") or "").lower() or "shopping"
+                        link = item.get("link") or ""
+                        title = item.get("title") or ""
+                        price = item.get("price") or None
+                        thumbnail = item.get("thumbnail") or item.get("image") or None
+                        if not title or not link:
+                            continue
+                        # Map source to a short site name
+                        site = "shopping"
+                        for candidate in ["amazon", "nike", "adidas", "zappos", "dsw", "footlocker", "famous footwear", "walmart", "target", "ebay", "kohl's", "macys"]:
+                            if candidate in source or candidate in link.lower():
+                                site = candidate.replace("'", "").replace(" ", "_")
+                                break
+                        url_id = self._generic_provider_item_id(link)
+                        nexus_id = self._build_generic_provider_nexus_id(site, url_id, link)
+                        all_results.append(
+                            ProductResult(
+                                nexus_id=nexus_id,
+                                site=site,
+                                title=title,
+                                price=str(price) if price else None,
+                                url=link,
+                                image=thumbnail,
+                                variations=[],
+                            )
+                        )
+                    print(f"[Amazon SerpAPI] Broad Shopping variant={variant!r} total={len(all_results)}", flush=True)
+                except Exception as exc:
+                    print(f"[Amazon SerpAPI] Broad Shopping variant={variant!r} failed: {exc}", flush=True)
+
         print(f"[Amazon SerpAPI] Found {len(all_results)} Amazon results after all variants", flush=True)
         return all_results[:limit]
     async def fast_search_http_provider(self, site: str, query: str, limit: int = 3) -> list[ProductResult]:
