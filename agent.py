@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
+import asyncio
+
 import httpx
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
@@ -92,6 +94,9 @@ class VariationResult:
     label: str
     in_stock: bool
     price: str | None
+
+
+SERPAPI_SEMAPHORE = asyncio.Semaphore(2)
 
 
 @dataclass(slots=True)
@@ -1323,8 +1328,9 @@ class AmazonAgent:
             "tbm": "shop",
         }
         try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=3.0) as client:
-                response = await client.get(url, params=params)
+            async with SERPAPI_SEMAPHORE:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+                    response = await client.get(url, params=params)
             print(f"[Temu Search] HTTP status={response.status_code}", flush=True)
             if response.status_code >= 400:
                 print(f"[Temu Search] API Error: {response.text[:300]}", flush=True)
@@ -1451,8 +1457,9 @@ class AmazonAgent:
                 break
             params = {"engine": "amazon", "k": variant, "api_key": api_key, "amazon_domain": "amazon.com"}
             try:
-                async with httpx.AsyncClient(follow_redirects=True, timeout=8.0) as client:
-                    response = await client.get(url, params=params)
+                async with SERPAPI_SEMAPHORE:
+                    async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+                        response = await client.get(url, params=params)
                 print(f"[Amazon SerpAPI] Amazon variant={variant!r} status={response.status_code}", flush=True)
                 if response.status_code >= 400:
                     text = response.text[:300]
@@ -1476,8 +1483,9 @@ class AmazonAgent:
                     break
                 params = {"engine": "google_shopping", "q": variant, "api_key": api_key, "gl": "us", "hl": "en", "tbm": "shop"}
                 try:
-                    async with httpx.AsyncClient(follow_redirects=True, timeout=8.0) as client:
-                        response = await client.get(url, params=params)
+                    async with SERPAPI_SEMAPHORE:
+                        async with httpx.AsyncClient(follow_redirects=True, timeout=5.0) as client:
+                            response = await client.get(url, params=params)
                     print(f"[Amazon SerpAPI] Shopping variant={variant!r} status={response.status_code}", flush=True)
                     if response.status_code >= 400:
                         print(f"[Amazon SerpAPI] Shopping error: {response.text[:300]}", flush=True)
