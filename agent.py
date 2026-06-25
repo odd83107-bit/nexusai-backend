@@ -145,6 +145,123 @@ QUERY_SYNONYMS = {
     "ארון": {"ארון", "ארונות", "wardrobe", "cabinet", "closet", "shelf"},
     "wardrobe": {"ארון", "ארונות", "wardrobe", "cabinet", "closet"},
 }
+# --- Intent Routing ---
+# מפה של כוונות לקבוצות providers. אם השאילתה תואמת כוונה, ה-providers שב-"skip" לא ייקראו.
+INTENT_CATEGORIES: list[dict] = [
+    {
+        "name": "electronics",
+        "keywords_he": {
+            "סמארטפון", "טלפון", "פלאפון", "מחשב", "לפטופ", "טאבלט", "טלוויזיה", "טלויזיה",
+            "מסך", "מקלדת", "עכבר", "אוזניות", "רמקול", "מצלמה", "מטען", "סוללה",
+            "ראוטר", "מדפסת", "שעון חכם", "שעון ספורט", "קונסולה", "משחקים", "דיסק",
+            "פנס", "מאוורר", "מזגן", "מקרן", "כונן", "זיכרון", "מעבד", "כרטיס מסך",
+        },
+        "keywords_en": {
+            "smartphone", "phone", "iphone", "samsung", "laptop", "computer", "tablet",
+            "television", "tv", "monitor", "keyboard", "mouse", "headphones", "headset",
+            "earphones", "earbuds", "speaker", "camera", "charger", "battery", "router",
+            "printer", "smartwatch", "console", "gaming", "ssd", "flashlight", "fan",
+            "projector", "gpu", "cpu", "ram", "airpods", "ipad",
+        },
+        "skip_providers": {"super_pharm", "be_pharm", "ikea", "max_stock", "zol_stock", "shufersal", "shein", "next"},
+    },
+    {
+        "name": "fashion",
+        "keywords_he": {
+            "נעל", "נעליים", "נעלי", "סניקרס", "מגפיים", "סנדלים", "כפכפים",
+            "חולצה", "מכנסיים", "מכנס", "חצאית", "שמלה", "ג'ינס", "ז'קט", "מעיל",
+            "תיק", "ארנק", "כובע", "גרביים", "לבוש", "בגד", "אופנה",
+        },
+        "keywords_en": {
+            "sneakers", "shoes", "boots", "sandals", "shirt", "pants", "jeans",
+            "jacket", "coat", "dress", "skirt", "bag", "wallet", "hat", "socks",
+            "fashion", "clothing", "apparel", "outfit", "hoodie", "leggings",
+        },
+        "skip_providers": {"super_pharm", "be_pharm", "ikea", "max_stock", "zol_stock", "shufersal", "machsanei_hashmal", "ksp", "ivory"},
+    },
+    {
+        "name": "pharma_beauty",
+        "keywords_he": {
+            "תרופה", "ויטמין", "תוסף", "קרם", "שמפו", "איפור", "קוסמטיקה", "בושם",
+            "ג'ל", "לק", "מסכה", "סרום", "לחות", "ספה", "כדורים", "אנטיביוטיקה",
+        },
+        "keywords_en": {
+            "vitamin", "supplement", "cream", "shampoo", "makeup", "cosmetics", "perfume",
+            "gel", "nail", "mask", "serum", "moisturizer", "medicine", "pills",
+        },
+        "skip_providers": {"ikea", "max_stock", "zol_stock", "machsanei_hashmal", "ksp", "ivory", "nike", "adidas", "terminal_x", "shein"},
+    },
+    {
+        "name": "furniture_home",
+        "keywords_he": {
+            "ארון", "שולחן", "כיסא", "ספה", "מיטה", "מדף", "מגירה", "מטבח",
+            "וילון", "שטיח", "מנורה", "עציץ", "כרית", "מזרן", "פרגולה",
+        },
+        "keywords_en": {
+            "wardrobe", "table", "chair", "sofa", "bed", "shelf", "drawer",
+            "curtain", "carpet", "lamp", "pillow", "mattress", "furniture",
+        },
+        "skip_providers": {"super_pharm", "be_pharm", "nike", "adidas", "terminal_x", "shein", "machsanei_hashmal", "ksp", "ivory"},
+    },
+]
+
+# --- Negative Match ---
+# אם השאילתה כוללת מילת "סוג מוצר" מסוימת, מוצר שמכיל מילה סותרת ייפסל.
+NEGATIVE_MATCH_RULES: list[dict] = [
+    {
+        "trigger_he": {"נעל", "נעליים", "נעלי", "סניקרס", "מגפיים", "כפכפים", "סנדלים"},
+        "trigger_en": {"shoe", "shoes", "sneakers", "sneaker", "boots", "sandals"},
+        "reject_tokens": {"חולצה", "חולצות", "גופייה", "גופיות", "גרביים", "גרב", "מכנס", "מכנסיים", "ז'קט", "מעיל", "תיק", "כובע", "חגורה", "t-shirt", "shirt", "pants", "jacket", "hat", "belt", "socks", "hoodie"},
+    },
+    {
+        "trigger_he": {"חולצה", "חולצות", "גופייה"},
+        "trigger_en": {"shirt", "shirts", "tee", "t-shirt", "top"},
+        "reject_tokens": {"נעל", "נעליים", "נעלי", "סניקרס", "מכנסיים", "ז'קט", "shoes", "sneakers", "pants", "jacket"},
+    },
+    {
+        "trigger_he": {"מחשב", "לפטופ", "מחשב נייד"},
+        "trigger_en": {"laptop", "computer", "notebook"},
+        "reject_tokens": {"מקרר", "כביסה", "מדיח", "טוסטר", "fridge", "washer", "dishwasher", "toaster"},
+    },
+    {
+        "trigger_he": {"טלוויזיה", "טלויזיה", "מסך"},
+        "trigger_en": {"tv", "television", "monitor"},
+        "reject_tokens": {"מקרר", "כביסה", "מדיח", "fridge", "washer"},
+    },
+]
+
+
+def _detect_intent(query: str) -> dict | None:
+    """מחזיר את קטגוריית הכוונה המתאימה לשאילתה, או None אם לא זוהתה."""
+    q_lower = query.lower()
+    tokens = set(re.findall(r"[\w\u0590-\u05ff'-]{2,}", q_lower))
+    for category in INTENT_CATEGORIES:
+        if tokens & category["keywords_he"] or tokens & category["keywords_en"]:
+            return category
+    return None
+
+
+def _has_negative_match(query: str, title: str) -> bool:
+    """מחזיר True אם ה-title מכיל מילה שסותרת את סוג המוצר בשאילתה."""
+    q_tokens = set(re.findall(r"[\w\u0590-\u05ff'-]{2,}", query.lower()))
+    title_tokens = set(re.findall(r"[\w\u0590-\u05ff'-]{2,}", title.lower()))
+    prefixes = "לבוכמשהו"
+    for rule in NEGATIVE_MATCH_RULES:
+        # האם השאילתה מפעילה את הכלל?
+        triggers = rule["trigger_he"] | rule["trigger_en"]
+        if not (q_tokens & triggers):
+            continue
+        # האם ה-title מכיל מילה דוחה?
+        for reject in rule["reject_tokens"]:
+            if reject in title_tokens:
+                return True
+            is_hebrew = any("\u0590" <= c <= "\u05ff" for c in reject)
+            if is_hebrew:
+                if any(t.startswith(p) and t[len(p):] == reject for t in title_tokens for p in prefixes):
+                    return True
+    return False
+
+
 NO_RESULTS_PATTERNS = (
     "לא נמצאו תוצאות",
     "לא נמצאו מוצרים",
@@ -1601,30 +1718,61 @@ class AmazonAgent:
 
     async def _fast_search_ksp(self, query: str, limit: int) -> list[ProductResult]:
         config = self._http_provider_configs()["ksp"]
-        urls = [
-            f"https://ksp.co.il/m_action.php?act=search&q={quote_plus(query)}",
-            f"https://www.ksp.co.il/m_action.php?act=search&q={quote_plus(query)}",
-            f"https://ksp.co.il/m_action/api/display_items?search={quote_plus(query)}",
-            f"https://ksp.co.il/web/cat/0..0..0?q={quote_plus(query)}",
+        base_url = "https://ksp.co.il"
+        api_headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Referer": "https://ksp.co.il/",
+            "Origin": "https://ksp.co.il",
+            "Accept-Language": "he-IL,he;q=0.9,en;q=0.8",
+        }
+        # Primary: internal JSON API (confirmed working)
+        api_url = f"{base_url}/m_action/api/category/?search={quote_plus(query)}&page=1"
+        try:
+            async with httpx.AsyncClient(headers=api_headers, follow_redirects=True, timeout=8.0, verify=False) as client:
+                response = await client.get(api_url)
+            print(f"[ksp Search] API status={response.status_code} url={api_url}", flush=True)
+            if response.status_code == 200:
+                data = response.json()
+                items = (data.get("result") or {}).get("items") or []
+                results: list[ProductResult] = []
+                for item in items[:limit]:
+                    uin = str(item.get("uin") or "")
+                    name = str(item.get("name") or "").strip()
+                    price_raw = item.get("price") or item.get("min_price")
+                    price = f"₪{price_raw}" if price_raw else None
+                    img = str(item.get("img") or "")
+                    url = f"{base_url}/web/item/{uin}" if uin else None
+                    if not name or not url:
+                        continue
+                    nexus_id = self._build_generic_provider_nexus_id("ksp", uin or name[:20], name)
+                    results.append(ProductResult(
+                        nexus_id=nexus_id, site="ksp", title=name,
+                        price=price, url=url, image=img if img.startswith("http") else None,
+                        variations=[], provider_name="KSP",
+                    ))
+                print(f"[ksp Search] JSON API found {len(results)} results", flush=True)
+                if results:
+                    return results
+        except Exception as exc:
+            print(f"[ksp Search] JSON API failed: {exc}", flush=True)
+        # Fallback: HTML scrape
+        fallback_urls = [
+            f"{base_url}/web/cat/0..0..0?q={quote_plus(query)}",
         ]
-        async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=8.0, verify=False) as client:
-            for url in urls:
+        async with httpx.AsyncClient(headers=self._israeli_provider_headers(base_url), follow_redirects=True, timeout=8.0, verify=False) as client:
+            for url in fallback_urls:
                 try:
                     response = await client.get(url)
-                    print(f"[ksp Search] HTTP status={response.status_code} url={url}", flush=True)
-                    if response.status_code >= 400:
+                    print(f"[ksp Search] HTML fallback status={response.status_code}", flush=True)
+                    if response.status_code >= 400 or self.page_has_no_results(response.text):
                         continue
-                    if self.page_has_no_results(response.text):
-                        return []
-                    data = self._safe_json_from_response(response)
-                    results = self._extract_products_from_json("ksp", data, config, limit) if data is not None else []
-                    if not results:
-                        results = self._extract_generic_provider_items("ksp", response.text, config, limit)
+                    results = self._extract_generic_provider_items("ksp", response.text, config, limit)
                     if results:
-                        print(f"[ksp Search] Found {len(results)} results", flush=True)
+                        print(f"[ksp Search] HTML fallback found {len(results)} results", flush=True)
                         return results
                 except Exception as exc:
-                    print(f"[ksp Search] Attempt failed url={url}: {exc}", flush=True)
+                    print(f"[ksp Search] HTML fallback failed: {exc}", flush=True)
         return []
 
     async def _fast_search_structured_provider(self, site: str, query: str, limit: int) -> list[ProductResult]:
