@@ -1371,56 +1371,74 @@ class AmazonAgent:
         if not api_key:
             print("[Amazon SerpAPI] Missing SERPAPI_API_KEY - returning empty", flush=True)
             return []
+
+        # Build query variants: try original, then broader queries for fashion/footwear.
+        variants = [query]
+        normalized = query.strip().lower()
+        if "shoes" in normalized:
+            variants.append(normalized.replace("shoes", "").strip())
+        if "running" in normalized:
+            variants.append("sneakers")
+        if "adidas" in normalized:
+            variants.append("adidas")
+        if "nike" in normalized:
+            variants.append("nike")
+        variants = list(dict.fromkeys(variants))  # preserve order, remove duplicates
+        print(f"[Amazon SerpAPI] Query variants: {variants}", flush=True)
+
         url = "https://serpapi.com/search.json"
-        params = {
-            "engine": "google_shopping",
-            "q": query,
-            "api_key": api_key,
-            "gl": "us",
-            "hl": "en",
-            "tbm": "shop",
-        }
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
-                response = await client.get(url, params=params)
-            print(f"[Amazon SerpAPI] HTTP status={response.status_code}", flush=True)
-            if response.status_code >= 400:
-                print(f"[Amazon SerpAPI] API Error: {response.text[:300]}", flush=True)
-                return []
-            data = response.json()
-            items = data.get("shopping_results", []) or []
-            print(f"[Amazon SerpAPI] Google Shopping returned {len(items)} raw items", flush=True)
-            results: list[ProductResult] = []
-            for item in items[:15]:
-                source = (item.get("source") or "").lower()
-                link = item.get("link") or ""
-                if "amazon" not in source and "amazon" not in link.lower():
+        all_results: list[ProductResult] = []
+        for variant in variants:
+            if len(all_results) >= limit:
+                break
+            params = {
+                "engine": "google_shopping",
+                "q": variant,
+                "api_key": api_key,
+                "gl": "us",
+                "hl": "en",
+                "tbm": "shop",
+            }
+            try:
+                async with httpx.AsyncClient(follow_redirects=True, timeout=10.0) as client:
+                    response = await client.get(url, params=params)
+                print(f"[Amazon SerpAPI] variant={variant!r} status={response.status_code}", flush=True)
+                if response.status_code >= 400:
+                    print(f"[Amazon SerpAPI] API Error: {response.text[:300]}", flush=True)
                     continue
-                if len(results) >= limit:
-                    break
-                title = item.get("title") or ""
-                price = item.get("price") or None
-                thumbnail = item.get("thumbnail") or item.get("image") or None
-                if not title:
-                    continue
-                url_id = self._generic_provider_item_id(link) if link else hashlib.sha1(title.encode("utf-8")).hexdigest()[:12]
-                nexus_id = self._build_generic_provider_nexus_id("amazon", url_id, link or title)
-                results.append(
-                    ProductResult(
-                        nexus_id=nexus_id,
-                        site="amazon",
-                        title=title,
-                        price=str(price) if price else None,
-                        url=link,
-                        image=thumbnail,
-                        variations=[],
+                data = response.json()
+                items = data.get("shopping_results", []) or []
+                print(f"[Amazon SerpAPI] variant={variant!r} raw={len(items)}", flush=True)
+                for item in items[:15]:
+                    source = (item.get("source") or "").lower()
+                    link = item.get("link") or ""
+                    if "amazon" not in source and "amazon" not in link.lower():
+                        continue
+                    if len(all_results) >= limit:
+                        break
+                    title = item.get("title") or ""
+                    price = item.get("price") or None
+                    thumbnail = item.get("thumbnail") or item.get("image") or None
+                    if not title:
+                        continue
+                    url_id = self._generic_provider_item_id(link) if link else hashlib.sha1(title.encode("utf-8")).hexdigest()[:12]
+                    nexus_id = self._build_generic_provider_nexus_id("amazon", url_id, link or title)
+                    all_results.append(
+                        ProductResult(
+                            nexus_id=nexus_id,
+                            site="amazon",
+                            title=title,
+                            price=str(price) if price else None,
+                            url=link,
+                            image=thumbnail,
+                            variations=[],
+                        )
                     )
-                )
-            print(f"[Amazon SerpAPI] Found {len(results)} Amazon results after filter", flush=True)
-            return results
-        except Exception as exc:
-            print(f"[Amazon SerpAPI] Failed with exception: {exc}", flush=True)
-            return []
+                print(f"[Amazon SerpAPI] variant={variant!r} filtered={len(all_results)}", flush=True)
+            except Exception as exc:
+                print(f"[Amazon SerpAPI] variant={variant!r} failed: {exc}", flush=True)
+        print(f"[Amazon SerpAPI] Found {len(all_results)} Amazon results after all variants", flush=True)
+        return all_results[:limit]
 
     async def fast_search_http_provider(self, site: str, query: str, limit: int = 3) -> list[ProductResult]:
         config = self._http_provider_configs().get(site)
