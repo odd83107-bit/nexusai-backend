@@ -497,22 +497,22 @@ async def _fast_search_amazon(query: str, limit: int) -> list[ProductResult]:
         if http_results:
             print("[Amazon Search] Using HTTP results", flush=True)
             return http_results
-        print("[Amazon Search] HTTP returned empty, falling back to Playwright", flush=True)
+        print("[Amazon Search] HTTP returned empty, falling back to SerpAPI", flush=True)
     except Exception as exc:
         print(f"[Amazon Search] HTTP failed: {exc}", flush=True)
-
-    print("[Amazon Search] Playwright fallback", flush=True)
-    async with agent_lock:
-        playwright_results = await agent.fast_search(query=query, limit=limit)
-    print(f"[Amazon Search] Playwright returned {len(playwright_results)} results", flush=True)
-    if playwright_results:
-        return playwright_results
 
     print("[Amazon Search] SerpAPI fallback", flush=True)
     async with agent_lock:
         serpapi_results = await agent.fast_search_amazon_serpapi(query=query, limit=limit)
     print(f"[Amazon Search] SerpAPI returned {len(serpapi_results)} results", flush=True)
-    return serpapi_results
+    if serpapi_results:
+        return serpapi_results
+
+    print("[Amazon Search] Playwright fallback", flush=True)
+    async with agent_lock:
+        playwright_results = await agent.fast_search(query=query, limit=limit)
+    print(f"[Amazon Search] Playwright returned {len(playwright_results)} results", flush=True)
+    return playwright_results
 
 
 def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
@@ -525,7 +525,7 @@ def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:
     response = requests.get(
         url,
         headers=headers,
-        timeout=8,
+        timeout=3,
         verify=False,
     )
     print(f"[Amazon HTTP] status={response.status_code} cards={len(re.findall(r'<div[^>]+data-component-type="s-search-result"', response.text))} len={len(response.text)}", flush=True)
