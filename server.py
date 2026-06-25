@@ -335,6 +335,34 @@ def _to_response(result: ProductResult, source_language: str) -> ProductResponse
     )
 
 
+HEBREW_TO_ENGLISH_FALLBACK = {
+    "אוזניות": "headphones",
+    "מחשב נייד": "laptop",
+    "מכונת כביסה": "washing machine",
+    "שעון יד": "watch",
+    "מקלדת bluetooth": "bluetooth keyboard",
+    "מקלדת בלוטות'": "bluetooth keyboard",
+    "חולצה": "t-shirt",
+    "נעלי אדידס": "adidas shoes",
+    "פנס ראש": "headlamp",
+    "מצלמה": "camera",
+    "מסך מחשב": "computer monitor",
+    "מסרק חשמלי": "electric comb",
+    "מגבת": "towel",
+    "כוס תרמית": "thermos",
+    "מטען לאייפון": "iphone charger",
+    "מכונת קפה": "coffee machine",
+    "דיסק קשיח": "external hard drive",
+    "מזרן": "mattress",
+    "עיפרון": "pencil",
+    "מברשת שיניים חשמלית": "electric toothbrush",
+    "מברשת שיניים": "toothbrush",
+    "בקבוק מים": "water bottle",
+    "נעלי ריצה": "running shoes",
+    "סניקרס": "sneakers",
+    "אייפון": "iphone",
+}
+
 def _search_query_for_amazon(query: str, source_language: str) -> str:
     normalized = query.strip().lower()
     overrides = {
@@ -344,7 +372,12 @@ def _search_query_for_amazon(query: str, source_language: str) -> str:
     }
     if normalized in overrides:
         return overrides[normalized]
-    return _translate_text(query, source=source_language, target="en") if source_language != "en" else query
+    if source_language == "en":
+        return query
+    if normalized in HEBREW_TO_ENGLISH_FALLBACK:
+        return HEBREW_TO_ENGLISH_FALLBACK[normalized]
+    translated = _translate_text(query, source=source_language, target="en")
+    return translated if translated.strip() else query
 
 
 async def _run_with_timeout(name: str, coro, timeout: float) -> list[ProductResult]:
