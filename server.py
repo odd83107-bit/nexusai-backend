@@ -55,6 +55,7 @@ SEARCH_CACHE_TTL_SECONDS = 60 * 60
 SEARCH_CACHE_PATH = Path("search_cache.json")
 INLINE_SEARCH_TIMEOUT_SECONDS = 4.0
 PER_PROVIDER_TIMEOUT_SECONDS = 4.5
+SLOW_PROVIDER_TIMEOUT_SECONDS = 7.0  # KSP JSON API takes ~3-5s
 AMAZON_PROVIDER_TIMEOUT_SECONDS = 5.0
 SEARCH_MEMORY_CACHE = TTLCache(maxsize=1000, ttl=7200)
 HTTP_PROVIDER_SITES = (
@@ -466,7 +467,7 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
                 _run_with_timeout(
                     site,
                     _fast_search_http_provider(site, _http_query_for_site(site), per_site_limit) if site not in skip_providers else _noop(),
-                    PER_PROVIDER_TIMEOUT_SECONDS,
+                    SLOW_PROVIDER_TIMEOUT_SECONDS if site in {"ksp", "machsanei_hashmal"} else PER_PROVIDER_TIMEOUT_SECONDS,
                 )
                 for site in HTTP_PROVIDER_SITES
             ],
