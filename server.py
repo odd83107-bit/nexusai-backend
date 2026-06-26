@@ -182,6 +182,38 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "build": BUILD_TAG, "shopping_graph_il": str("shopping_graph_il" in PROVIDER_NAMES)}
 
 
+
+
+@app.get("/debug/serpapi")
+async def debug_serpapi(q: str = "אוזניות") -> dict:
+    import os
+    import httpx
+    api_key = os.getenv("SERPAPI_API_KEY")
+    if not api_key:
+        return {"error": "SERPAPI_API_KEY not set"}
+    params = {
+        "engine": "google_shopping",
+        "q": q,
+        "api_key": api_key,
+        "google_domain": "google.co.il",
+        "gl": "il",
+        "hl": "he",
+        "num": 5,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get("https://serpapi.com/search.json", params=params)
+        data = r.json()
+        items = data.get("shopping_results", []) or []
+        return {
+            "status": r.status_code,
+            "items_count": len(items),
+            "first_3": [{"title": i.get("title","")[:60], "source": i.get("source",""), "price": i.get("price","")} for i in items[:3]],
+            "error": data.get("error"),
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
 @app.get("/debug/fetch-test", response_class=HTMLResponse)
 async def debug_fetch_test() -> str:
     return """
@@ -387,6 +419,10 @@ async def _noop() -> list[ProductResult]:
     return []
 
 
+async def _noop() -> list[ProductResult]:
+    return []
+
+
 async def _run_with_timeout(name: str, coro, timeout: float) -> list[ProductResult]:
     try:
         result = await asyncio.wait_for(coro, timeout=timeout)
@@ -508,6 +544,14 @@ async def _fast_search_http_provider(site: str, query: str, limit: int) -> list[
         return await agent.fast_search_http_provider(site=site, query=query, limit=limit)
     except Exception as exc:
         print(f"[{site} Search] Failed: {exc}", flush=True)
+        return []
+
+
+async def _fast_search_shopping_graph_il(query: str, limit: int) -> list[ProductResult]:
+    try:
+        return await agent.fast_search_shopping_graph_il(query=query, limit=limit)
+    except Exception as exc:
+        print(f"[ShoppingIL] Wrapper failed: {exc}", flush=True)
         return []
 
 
