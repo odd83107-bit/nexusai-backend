@@ -23,47 +23,79 @@ from typing import Any
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 
+# Category tags for reporting
+QUERY_CATEGORIES: dict[str, str] = {}
+
+def _tag(cat: str, queries: list[str]) -> list[str]:
+    for q in queries:
+        QUERY_CATEGORIES[q] = cat
+    return queries
+
 DEFAULT_QUERIES = [
-    # Hebrew
-    "פנס ראש",
-    "נעלי אדידס",
-    "עיפרון",
-    "מכונת כביסה",
-    "מקלדת bluetooth",
-    "אוזניות",
-    "חולצה",
-    "מכונת קפה",
-    "מטען לאייפון",
-    "שעון יד",
-    "מזרן",
-    "מחשב נייד",
-    "מסך מחשב",
-    "דיסק קשיח",
-    "מצלמה",
-    "מסרק חשמלי",
-    "מגבת",
-    "כוס תרמית",
-    # English
-    "iphone",
-    "t-shirt",
-    "headphones",
-    "wireless mouse",
-    "sneakers",
-    "laptop",
-    "running shoes",
-    "coffee maker",
-    "backpack",
-    "blender",
-    "watch",
-    "keyboard",
-    "monitor",
-    "SSD",
-    "camera",
-    "adidas shoes",
-    "flashlight",
-    "pencil",
-    "toothbrush",
-    "water bottle",
+    # ── אלקטרוניקה עברית (5) ──────────────────────────────────────────────
+    *_tag("אלקטרוניקה", [
+        "אוזניות בלוטות",
+        "מחשב נייד",
+        "טלוויזיה חכמה",
+        "מטען אלחוטי",
+        "מצלמת אבטחה",
+    ]),
+    # ── אלקטרוניקה אנגלית (5) ─────────────────────────────────────────────
+    *_tag("אלקטרוניקה", [
+        "AirPods Pro",
+        "Samsung Galaxy S24",
+        "laptop i7",
+        "Xiaomi smart watch",
+        "USB-C charger",
+    ]),
+    # ── אופנה עברית (5) ───────────────────────────────────────────────────
+    *_tag("אופנה", [
+        "נעלי נייקי ריצה",
+        "ג'ינס סקיני",
+        "שמלת קיץ",
+        "חולצת טריקו",
+        "מעיל חורף",
+    ]),
+    # ── אופנה אנגלית (5) ──────────────────────────────────────────────────
+    *_tag("אופנה", [
+        "Adidas Superstar sneakers",
+        "slim fit jeans",
+        "summer dress",
+        "Nike running shoes",
+        "leather jacket",
+    ]),
+    # ── פארם ויופי עברית (5) ──────────────────────────────────────────────
+    *_tag("פארם/יופי", [
+        "בושם לגבר",
+        "שמפו לשיער יבש",
+        "קרם פנים לחות",
+        "ויטמין C",
+        "מברשת שיניים חשמלית",
+    ]),
+    # ── פארם ויופי אנגלית (5) ─────────────────────────────────────────────
+    *_tag("פארם/יופי", [
+        "men perfume",
+        "face moisturizer",
+        "vitamin D supplement",
+        "electric toothbrush",
+        "hair conditioner",
+    ]),
+    # ── בית וסופר עברית (5) ───────────────────────────────────────────────
+    *_tag("בית/סופר", [
+        "מקרר LG",
+        "שולחן כתיבה",
+        "מכונת קפה",
+        "מחבת טפלון",
+        "כרית שינה",
+    ]),
+    # ── בית וסופר אנגלית (5) ──────────────────────────────────────────────
+    *_tag("בית/סופר", [
+        "IKEA desk chair",
+        "coffee maker",
+        "non-stick pan",
+        "blender",
+        "mattress topper",
+    ]),
 ]
 
 
@@ -133,6 +165,29 @@ _SYNONYMS: dict[str, set[str]] = {
     "mouse": {"עכבר", "עכברים", "mouse", "mice"},
     "מכנסיים": {"מכנסיים", "מכנס", "pants", "trousers", "jeans", "shorts"},
     "pants": {"מכנסיים", "מכנס", "pants", "trousers", "jeans", "shorts"},
+    "מקרר": {"מקרר", "מקררים", "fridge", "refrigerator", "freezer", "cooling"},
+    "airpods": {"אוזניות", "headphones", "earbuds", "earphones"},
+    "samsung": {"סמסונג", "galaxy", "phone", "smartphone", "טלפון"},
+    "xiaomi": {"שיאומי", "smartwatch", "שעון", "watch", "phone"},
+    "מטען": {"מטען", "מטענים", "charger", "charging", "wireless", "cable"},
+    "מצלמה": {"מצלמה", "מצלמות", "camera", "cameras", "security", "cctv"},
+    "שולחן": {"שולחן", "שולחנות", "table", "desk", "writing desk"},
+    "כרית": {"כרית", "כריות", "pillow", "cushion", "sleep"},
+    "מחבת": {"מחבת", "pan", "frying", "non-stick", "teflon"},
+    "בושם": {"בושם", "בשמים", "perfume", "cologne", "fragrance"},
+    "שמפו": {"שמפו", "שמפואים", "shampoo", "conditioner", "hair"},
+    "קרם": {"קרם", "cream", "moisturizer", "lotion", "face"},
+    "ויטמין": {"ויטמין", "vitamin", "supplement", "capsule"},
+    "vitamin": {"ויטמין", "vitamin", "supplement", "capsule"},
+    "ג'ינס": {"ג'ינס", "ג'ינסים", "jeans", "denim", "pants"},
+    "jeans": {"ג'ינס", "ג'ינסים", "jeans", "denim", "pants", "slim"},
+    "שמלה": {"שמלה", "שמלות", "dress", "skirt", "gown"},
+    "dress": {"שמלה", "שמלות", "dress", "skirt", "summer"},
+    "מעיל": {"מעיל", "מעילים", "jacket", "coat", "hoodie", "winter"},
+    "jacket": {"מעיל", "מעילים", "jacket", "coat", "leather", "winter"},
+    "blender": {"בלנדר", "מיקסר", "blender", "mixer", "smoothie"},
+    "pegasus": {"נעל", "נעלי", "ריצה", "shoe", "running", "sneakers"},
+    "macbook": {"מחשב", "לפטופ", "laptop", "computer"},
 }
 _PREFIXES = "לבוכמשהו"
 
@@ -235,6 +290,20 @@ async def _search_one(base_url: str, query: str, limit: int, timeout: float) -> 
         except asyncio.TimeoutError:
             continue
         except Exception as exc:
+            err_str = str(exc)
+            if "404" in err_str:
+                # Task lost (server restart). Re-submit and continue polling.
+                try:
+                    resp2 = await asyncio.wait_for(
+                        loop.run_in_executor(None, urllib.request.urlopen, req),
+                        timeout=timeout,
+                    )
+                    body2 = json.loads(resp2.read())
+                    task_id = body2.get("task_id", task_id)
+                except Exception:
+                    pass
+                await asyncio.sleep(2)
+                continue
             return {"error": f"status poll failed: {exc}", "results": []}
 
         if status_body.get("status") == "completed":
@@ -308,7 +377,7 @@ async def _run_bulk(base_url: str, queries: list[str], limit: int, timeout: floa
     async def _bounded(query: str) -> ProductReport:
         async with semaphore:
             result = await _run_query(base_url, query, limit, timeout)
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(1.0)
             return result
 
     tasks = [_bounded(q) for q in queries]
@@ -322,33 +391,69 @@ def _print_report(reports: list[ProductReport]) -> None:
     low_relevance = sum(1 for r in reports if r.relevance_score < 0.3 and r.got_results)
 
     print("\n" + "=" * 80)
-    print("NEXUSAI BULK SEARCH TEST REPORT")
+    print("NEXUSAI BULK SEARCH TEST REPORT — 40 QUERIES")
     print("=" * 80)
-    print(f"Total queries: {total}")
-    print(f"Queries with results: {with_results} ({with_results / total * 100:.1f}%)")
-    print(f"Queries with images: {with_images} ({with_images / total * 100:.1f}%)")
-    print(f"Queries with low relevance: {low_relevance}")
+    print(f"סה\"כ שאילתות: {total}")
+    print(f"החזירו תוצאות: {with_results}/{total} ({with_results / total * 100:.1f}%)")
+    print(f"עם תמונות:     {with_images}/{total}")
+    print(f"רלוונטיות נמוכה: {low_relevance}")
     print("=" * 80)
 
-    print("\nPer-query breakdown:")
+    # Per-category breakdown
+    cats: dict[str, list] = {}
     for r in reports:
+        cat = QUERY_CATEGORIES.get(r.query, "אחר")
+        cats.setdefault(cat, []).append(r)
+
+    print("\n📊 דוח לפי קטגוריה:")
+    print(f"  {'קטגוריה':<15} {'עם תוצאות':>12} {'% הצלחה':>10} {'ממוצע רלוונטיות':>18} {'ממוצע מהירות':>14}")
+    print("  " + "-" * 72)
+    fastest_cat = None
+    fastest_time = float("inf")
+    for cat, reps in sorted(cats.items()):
+        ok = sum(1 for r in reps if r.got_results)
+        pct = ok / len(reps) * 100
+        avg_rel = sum(r.relevance_score for r in reps) / len(reps)
+        # Extract timing from notes
+        times = []
+        for r in reps:
+            for n in r.notes:
+                m = __import__("re").search(r"(\d+\.\d+)s", n)
+                if m:
+                    times.append(float(m.group(1)))
+                    break
+        avg_t = sum(times) / len(times) if times else 0
+        if avg_t and avg_t < fastest_time and ok > 0:
+            fastest_time = avg_t
+            fastest_cat = cat
+        print(f"  {cat:<15} {ok}/{len(reps):>10} {pct:>9.1f}% {avg_rel:>17.2f} {avg_t:>13.1f}s")
+    if fastest_cat:
+        print(f"\n  🏆 הקטגוריה המהירה ביותר: {fastest_cat} (ממוצע {fastest_time:.1f}s)")
+
+    print("\n" + "=" * 80)
+    print("פירוט לכל שאילתה:")
+    for r in reports:
+        cat = QUERY_CATEGORIES.get(r.query, "אחר")
         status = "✅" if r.got_results and r.relevance_score >= 0.3 else ("⚠️" if r.got_results else "❌")
         print(
-            f"{status} {r.query!r:25s} | results={r.result_count:>2} | "
-            f"relevance={r.relevance_score:>4.2f} | images={r.avg_image_score:>4.2f} | "
-            f"providers={', '.join(r.providers) or 'none'}"
+            f"{status} [{cat:<10}] {r.query!r:30s} | results={r.result_count:>2} | "
+            f"rel={r.relevance_score:>4.2f} | providers={', '.join(r.providers) or 'none'}"
         )
         if r.sample_titles:
-            for title in r.sample_titles:
+            for title in r.sample_titles[:2]:
                 print(f"      → {title[:70]}")
         for note in r.notes:
             print(f"      NOTE: {note}")
 
     print("\n" + "=" * 80)
-    print("Problematic queries (empty or low relevance):")
+    print("⚠️  שאילתות ללא תוצאות / רלוונטיות נמוכה:")
+    found_problems = False
     for r in reports:
         if not r.got_results or r.relevance_score < 0.3:
+            found_problems = True
             print(f"  - {r.query!r}: results={r.result_count}, relevance={r.relevance_score:.2f}")
+    if not found_problems:
+        print("  🎉 אין בעיות — כל השאילתות החזירו תוצאות רלוונטיות!")
     print("=" * 80 + "\n")
 
 
