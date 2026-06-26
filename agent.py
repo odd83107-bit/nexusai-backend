@@ -58,6 +58,7 @@ PROVIDER_NAMES = {
     "shufersal": "שופרסל",
     "shein": "Shein",
     "temu": "Temu",
+    "shopping_graph_il": "Google Shopping ישראל",
 }
 QUERY_SYNONYMS = {
     "מחשבון": {"מחשבון", "מחשבונים", "calculator", "calculators", "calc"},
@@ -1556,6 +1557,62 @@ class AmazonAgent:
             return results
         except Exception as exc:
             print(f"[Temu Search] Failed with exception: {exc}", flush=True)
+            return []
+
+    async def fast_search_shopping_graph_il(self, query: str, limit: int = 3) -> list[ProductResult]:
+        """Google Shopping Israel via SerpApi — bypasses direct site blocks (e.g. 403 on machsanei_hashmal)."""
+        api_key = os.getenv("SERPAPI_API_KEY")
+        print(f"[ShoppingIL] Key found: {bool(api_key)} query={query!r}", flush=True)
+        if not api_key:
+            print("[ShoppingIL] Missing SERPAPI_API_KEY - returning empty", flush=True)
+            return []
+        url = "https://serpapi.com/search.json"
+        params = {
+            "engine": "google_shopping",
+            "q": query,
+            "api_key": api_key,
+            "google_domain": "google.co.il",
+            "gl": "il",
+            "hl": "he",
+            "num": min(limit * 4, 20),
+        }
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, timeout=8.0) as client:
+                response = await client.get(url, params=params)
+            print(f"[ShoppingIL] HTTP status={response.status_code}", flush=True)
+            if response.status_code >= 400:
+                print(f"[ShoppingIL] API error: {response.text[:300]}", flush=True)
+                return []
+            data = response.json()
+            items = data.get("shopping_results", []) or []
+            print(f"[ShoppingIL] Google Shopping returned {len(items)} raw items", flush=True)
+            results: list[ProductResult] = []
+            for item in items:
+                if len(results) >= limit:
+                    break
+                title = (item.get("title") or "").strip()
+                link = item.get("link") or item.get("product_link") or ""
+                price = item.get("price") or None
+                thumbnail = item.get("thumbnail") or item.get("image") or None
+                source = (item.get("source") or "").strip()
+                if not title or not link:
+                    continue
+                url_id = self._generic_provider_item_id(link)
+                nexus_id = self._build_generic_provider_nexus_id("shopping_graph_il", url_id, link)
+                results.append(ProductResult(
+                    nexus_id=nexus_id,
+                    site="shopping_graph_il",
+                    title=title,
+                    price=str(price) if price else None,
+                    url=link,
+                    image=thumbnail,
+                    variations=[],
+                    provider_name=source or "Google Shopping ישראל",
+                ))
+            print(f"[ShoppingIL] Returning {len(results)} results", flush=True)
+            return results
+        except Exception as exc:
+            print(f"[ShoppingIL] Failed: {exc}", flush=True)
             return []
 
     async def fast_search_amazon_serpapi(self, query: str, limit: int = 3) -> list[ProductResult]:
