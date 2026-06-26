@@ -21,7 +21,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, model_validator
 
-from agent import PROVIDER_NAMES, AmazonAgent, ProductResult, VariationResult
+from agent import PROVIDER_NAMES, AmazonAgent, ProductResult, VariationResult, _detect_intent, _has_negative_match
+
+BUILD_TAG = "2026-06-26-shopping-graph-il"
 
 if sys.stdout.encoding != "utf-8":
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -177,7 +179,7 @@ async def add_private_network_headers(request, call_next):
 
 @app.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok"}
+    return {"status": "ok", "build": BUILD_TAG, "shopping_graph_il": str("shopping_graph_il" in PROVIDER_NAMES)}
 
 
 @app.get("/debug/fetch-test", response_class=HTMLResponse)
@@ -381,6 +383,10 @@ def _search_query_for_amazon(query: str, source_language: str) -> str:
     return translated if translated.strip() else query
 
 
+async def _noop() -> list[ProductResult]:
+    return []
+
+
 async def _run_with_timeout(name: str, coro, timeout: float) -> list[ProductResult]:
     try:
         result = await asyncio.wait_for(coro, timeout=timeout)
@@ -402,6 +408,12 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
         hebrew_query = _translate_text(query, source=source_language, target="iw") if source_language == "en" else query
         print(f"[Search] Original query='{query}' en='{amazon_query}' he='{hebrew_query}'", flush=True)
         per_site_limit = FAST_SEARCH_LIMIT_PER_SITE
+        intent = _detect_intent(query) or _detect_intent(amazon_query)
+        skip_providers: set[str] = intent["skip_providers"] if intent else set()
+        if intent:
+            print(f"[Intent] Detected intent={intent['name']!r} skip={skip_providers}", flush=True)
+        shopping_il_query = hebrew_query if hebrew_query else amazon_query
+
         def _http_query_for_site(site: str) -> str:
             # Fashion sites work best with English queries, even when the user typed in Hebrew.
             if site in FASHION_HTTP_SITES:
@@ -412,16 +424,21 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
             _run_with_timeout("amazon", _fast_search_amazon(amazon_query, per_site_limit), AMAZON_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("temu", _fast_search_temu(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             _run_with_timeout("aliexpress", _fast_search_aliexpress(amazon_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
-            _run_with_timeout("next", _fast_search_next(hebrew_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("next", _fast_search_next(hebrew_query, per_site_limit) if "next" not in skip_providers else _noop(), PER_PROVIDER_TIMEOUT_SECONDS),
+            _run_with_timeout("shopping_graph_il", _fast_search_shopping_graph_il(shopping_il_query, per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS),
             *[
-                _run_with_timeout(site, _fast_search_http_provider(site, _http_query_for_site(site), per_site_limit), PER_PROVIDER_TIMEOUT_SECONDS)
+                _run_with_timeout(
+                    site,
+                    _fast_search_http_provider(site, _http_query_for_site(site), per_site_limit) if site not in skip_providers else _noop(),
+                    PER_PROVIDER_TIMEOUT_SECONDS,
+                )
                 for site in HTTP_PROVIDER_SITES
             ],
         ]
         site_results = await asyncio.gather(*provider_tasks)
         results: list[ProductResult] = []
         counts: dict[str, int] = {}
-        sites = ["amazon", "temu", "aliexpress", "next", *HTTP_PROVIDER_SITES]
+        sites = ["amazon", "temu", "aliexpress", "next", "shopping_graph_il", *HTTP_PROVIDER_SITES]
         for index, site in enumerate(sites):
             provider_result = site_results[index]
             if not isinstance(provider_result, list):
@@ -431,7 +448,12 @@ async def _run_search_task(task_id: str, query: str, limit: int, cache_key: str)
             for result in provider_result:
                 if result.site != site:
                     continue
-                if not (AmazonAgent.is_title_relevant(query, result.title) or AmazonAgent.is_title_relevant(hebrew_query, result.title) or AmazonAgent.is_title_relevant(amazon_query, result.title)):
+                if _has_negative_match(query, result.title) or _has_negative_match(amazon_query, result.title):
+                    print(f"[Filter] Negative match dropped from {site}: {result.title!r}", flush=True)
+                    continue
+                if not (AmazonAgent.is_title_relevant(query, result.title)
+                        or AmazonAgent.is_title_relevant(hebrew_query, result.title)
+                        or AmazonAgent.is_title_relevant(amazon_query, result.title)):
                     print(f"[Filter] Dropped unrelated item from {site}: {result.title!r}", flush=True)
                     continue
                 print(f"[Filter] Kept {result.title!r} for query {query!r}", flush=True)
@@ -486,6 +508,14 @@ async def _fast_search_http_provider(site: str, query: str, limit: int) -> list[
         return await agent.fast_search_http_provider(site=site, query=query, limit=limit)
     except Exception as exc:
         print(f"[{site} Search] Failed: {exc}", flush=True)
+        return []
+
+
+async def _fast_search_shopping_graph_il(query: str, limit: int) -> list[ProductResult]:
+    try:
+        return await agent.fast_search_shopping_graph_il(query=query, limit=limit)
+    except Exception as exc:
+        print(f"[ShoppingIL] Wrapper failed: {exc}", flush=True)
         return []
 
 
