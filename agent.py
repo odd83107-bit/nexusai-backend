@@ -97,6 +97,21 @@ QUERY_SYNONYMS = {
     "תרמית": {"תרמית", "תרמוס", "thermos", "insulated", "vacuum", "tumbler", "thermal"},
     "thermos": {"תרמית", "תרמוס", "thermos", "insulated", "tumbler", "thermal"},
     "מחשב": {"מחשב", "מחשבים", "computer", "laptop", "pc", "notebook", "desktop"},
+    # Brand → category mappings (so "נעלי ריצה" matches "Nike Pegasus", "MacBook" matches "מחשב נייד")
+    "pegasus": {"נעל", "נעלי", "נעליים", "ריצה", "shoe", "shoes", "running", "sneakers"},
+    "ultraboost": {"נעל", "נעלי", "נעליים", "ריצה", "shoe", "shoes", "running", "sneakers"},
+    "air": {"נעל", "נעלי", "נעליים", "shoe", "shoes", "running", "sneakers", "airpods", "אוזניות"},
+    "zoom": {"נעל", "נעלי", "נעליים", "shoe", "shoes", "running"},
+    "macbook": {"מחשב", "מחשבים", "לפטופ", "laptop", "computer", "notebook"},
+    "macbook air": {"מחשב", "לפטופ", "laptop"},
+    "macbook pro": {"מחשב", "לפטופ", "laptop"},
+    "airpods": {"אוזניות", "אוזנייה", "headphones", "earphones", "earbuds"},
+    "galaxy buds": {"אוזניות", "headphones", "earbuds"},
+    "iphone": {"טלפון", "סמארטפון", "phone", "smartphone"},
+    "ipad": {"טאבלט", "tablet", "מחשב"},
+    "refrigerator": {"מקרר", "fridge", "freezer"},
+    "washing machine": {"כביסה", "washing", "washer", "laundry"},
+
     "laptop": {"מחשב", "מחשבים", "laptop", "notebook", "computer", "pc"},
     "מקלדת": {"מקלדת", "מקלדות", "keyboard", "keyboards"},
     "keyboard": {"מקלדת", "מקלדות", "keyboard", "keyboards"},
@@ -153,6 +168,34 @@ QUERY_SYNONYMS = {
     "ארון": {"ארון", "ארונות", "wardrobe", "cabinet", "closet", "shelf"},
     "wardrobe": {"ארון", "ארונות", "wardrobe", "cabinet", "closet"},
 }
+
+# Maps known brand/model names to product category tokens.
+# If the title contains the brand, its category tokens are added to title_tokens for relevance matching.
+BRAND_TO_CATEGORY: dict[str, set[str]] = {
+    "pegasus":      {"נעל", "נעלי", "ריצה", "shoe", "running", "sneakers"},
+    "ultraboost":   {"נעל", "נעלי", "ריצה", "shoe", "running", "sneakers"},
+    "yeezy":        {"נעל", "נעלי", "sneakers", "shoe"},
+    "airmax":       {"נעל", "נעלי", "sneakers", "shoe"},
+    "vaporfly":     {"נעל", "נעלי", "ריצה", "shoe", "running"},
+    "macbook":      {"מחשב", "לפטופ", "laptop", "computer", "notebook"},
+    "airpods":      {"אוזניות", "headphones", "earbuds", "earphones"},
+    "galaxy buds":  {"אוזניות", "headphones", "earbuds"},
+    "buds2":        {"אוזניות", "headphones", "earbuds"},
+    "wh-1000":      {"אוזניות", "headphones"},
+    "xm5":          {"אוזניות", "headphones"},
+    "xm4":          {"אוזניות", "headphones"},
+    "iphone":       {"טלפון", "phone", "smartphone"},
+    "galaxy s":     {"טלפון", "phone", "smartphone"},
+    "pixel":        {"טלפון", "phone", "smartphone"},
+    "ipad":         {"טאבלט", "tablet"},
+    "surface":      {"מחשב", "לפטופ", "laptop", "tablet"},
+    "vivobook":     {"מחשב", "לפטופ", "laptop"},
+    "thinkpad":     {"מחשב", "לפטופ", "laptop"},
+    "inspiron":     {"מחשב", "לפטופ", "laptop"},
+    "refrigerator": {"מקרר", "fridge"},
+    "dishwasher":   {"מדיח", "dishwasher"},
+}
+
 # --- Intent Routing ---
 # מפה של כוונות לקבוצות providers. אם השאילתה תואמת כוונה, ה-providers שב-"skip" לא ייקראו.
 INTENT_CATEGORIES: list[dict] = [
@@ -752,6 +795,10 @@ class AmazonAgent:
 
         normalized_title = re.sub(r"\s+", " ", html.unescape(title)).lower()
         title_tokens = {token.lower() for token in re.findall(r"[\w\u0590-\u05ff'-]{2,}", normalized_title)}
+        # Expand title_tokens with brand→category implicit tokens
+        for brand, cats in BRAND_TO_CATEGORY.items():
+            if brand in normalized_title:
+                title_tokens.update(cats)
         prefixes = "לבוכמשהו"
 
         def _token_matches(token_lower: str) -> bool:
@@ -776,8 +823,10 @@ class AmazonAgent:
 
         query_is_hebrew = any("\u0590" <= c <= "\u05ff" for c in query)
         if query_is_hebrew:
-            # Strict: every Hebrew token in the original query must match (directly or via synonym).
-            return score >= 1.0
+            # Allow 2/3 tokens to match for multi-word Hebrew queries (avoids over-filtering).
+            if len(original_tokens) == 1:
+                return score >= 1.0
+            return score >= 0.67
         # English queries: at least half the tokens must match.
         if len(original_tokens) == 1:
             return score >= 1.0
