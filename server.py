@@ -53,9 +53,9 @@ def print(*args: Any, **kwargs: Any) -> None:
 FAST_SEARCH_LIMIT_PER_SITE = 3
 SEARCH_CACHE_TTL_SECONDS = 60 * 60
 SEARCH_CACHE_PATH = Path("search_cache.json")
-INLINE_SEARCH_TIMEOUT_SECONDS = 5.5
-PER_PROVIDER_TIMEOUT_SECONDS = 8.0
-AMAZON_PROVIDER_TIMEOUT_SECONDS = 15.0
+INLINE_SEARCH_TIMEOUT_SECONDS = 4.0
+PER_PROVIDER_TIMEOUT_SECONDS = 4.5
+AMAZON_PROVIDER_TIMEOUT_SECONDS = 5.0
 SEARCH_MEMORY_CACHE = TTLCache(maxsize=1000, ttl=7200)
 HTTP_PROVIDER_SITES = (
     "nike",
@@ -566,27 +566,70 @@ async def _fast_search_shopping_graph_il(query: str, limit: int) -> list[Product
 async def _fast_search_amazon(query: str, limit: int) -> list[ProductResult]:
     print(f"[Amazon Search] Starting query={query!r} limit={limit}", flush=True)
     try:
-        http_results = await asyncio.to_thread(_fast_search_amazon_http, query, limit)
+        http_results = await _fast_search_amazon_http_async(query, limit)
         print(f"[Amazon Search] HTTP returned {len(http_results)} results", flush=True)
         if http_results:
-            print("[Amazon Search] Using HTTP results", flush=True)
             return http_results
-        print("[Amazon Search] HTTP returned empty, falling back to SerpAPI", flush=True)
     except Exception as exc:
         print(f"[Amazon Search] HTTP failed: {exc}", flush=True)
-
     print("[Amazon Search] SerpAPI fallback", flush=True)
-    async with agent_lock:
-        serpapi_results = await agent.fast_search_amazon_serpapi(query=query, limit=limit)
-    print(f"[Amazon Search] SerpAPI returned {len(serpapi_results)} results", flush=True)
-    if serpapi_results:
-        return serpapi_results
+    try:
+        async with agent_lock:
+            serpapi_results = await agent.fast_search_amazon_serpapi(query=query, limit=limit)
+        if serpapi_results:
+            return serpapi_results
+    except Exception as exc:
+        print(f"[Amazon Search] SerpAPI failed: {exc}", flush=True)
+    return []
 
-    print("[Amazon Search] Playwright fallback", flush=True)
-    async with agent_lock:
-        playwright_results = await agent.fast_search(query=query, limit=limit)
-    print(f"[Amazon Search] Playwright returned {len(playwright_results)} results", flush=True)
-    return playwright_results
+
+async def _fast_search_amazon_http_async(query: str, limit: int) -> list[ProductResult]:
+    import httpx as _httpx
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    url = f"https://www.amazon.com/s?k={quote_plus(query)}"
+    print(f"[Amazon httpx] Requesting {url}", flush=True)
+    async with _httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=3.5, verify=False) as client:
+        response = await client.get(url)
+    print(f"[Amazon httpx] status={response.status_code} len={len(response.text)}", flush=True)
+    if response.status_code >= 400:
+        return []
+    return _parse_amazon_html(response.text, limit)
+
+
+def _parse_amazon_html(html_text: str, limit: int) -> list[ProductResult]:
+    results: list[ProductResult] = []
+    cards = re.findall(
+        r'<div[^>]+data-component-type="s-search-result"[\s\S]*?</div>\s*</div>\s*</div>\s*</div>',
+        html_text,
+    )
+    for card in cards:
+        if len(results) >= limit:
+            break
+        title_match = re.search(r'<h2[\s\S]*?<span[^>]*>(.*?)</span>', card)
+        href_match = re.search(r'<a[^>]+class="[^"]*a-link-normal[^"]*"[^>]+href="([^"]+)"', card)
+        image_match = re.search(r'<img[^>]+class="[^"]*s-image[^"]*"[^>]+data-a-dynamic-image="([^"]+)"', card)
+        if not image_match:
+            image_match = re.search(r'<img[^>]+class="[^"]*s-image[^"]*"[^>]+src="([^"]+)"', card)
+        price_match = re.search(r'<span[^>]+class="a-offscreen"[^>]*>(.*?)</span>', card)
+        if not title_match:
+            continue
+        title = html.unescape(re.sub(r"<[^>]+>", "", title_match.group(1))).strip()
+        if not title:
+            continue
+        href = html.unescape(href_match.group(1)) if href_match else None
+        prod_url = f"https://www.amazon.com{href}" if href and href.startswith("/") else href
+        prod_url = AmazonAgent.normalize_product_url(prod_url)
+        price_str = html.unescape(price_match.group(1)).strip() if price_match else None
+        results.append(ProductResult(
+            nexus_id=AmazonAgent._build_nexus_id(prod_url or title),
+            site="amazon", title=title, price=price_str, url=prod_url,
+            image=None, variations=[], provider_name="Amazon",
+        ))
+    return results
 
 
 def _fast_search_amazon_http(query: str, limit: int) -> list[ProductResult]:

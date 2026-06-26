@@ -60,6 +60,13 @@ PROVIDER_NAMES = {
     "temu": "Temu",
     "shopping_graph_il": "Google Shopping ישראל",
 }
+# Free proxy pool — rotate on 403/timeout to bypass per-IP blocks
+PROXY_LIST: list[str] = [
+    # Add working proxies here, e.g.:
+    # "http://proxy1.example.com:8080",
+    # "socks5://proxy2.example.com:1080",
+]  # Empty = direct connection (no proxy)
+
 QUERY_SYNONYMS = {
     "מחשבון": {"מחשבון", "מחשבונים", "calculator", "calculators", "calc"},
     "calculator": {"מחשבון", "מחשבונים", "calculator", "calculators", "calc"},
@@ -780,7 +787,7 @@ class AmazonAgent:
         search_slug = quote_plus(query).replace("+", "-")
         url = f"https://www.aliexpress.com/w/wholesale-{search_slug}.html?sortType=bestmatch_sort"
         try:
-            async with httpx.AsyncClient(headers=self._aliexpress_headers(), follow_redirects=True, timeout=6.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._aliexpress_headers(), follow_redirects=True, timeout=3.5, verify=False) as client:
                 response = await client.get(url)
             print(f"[AliExpress Search] HTTP status={response.status_code} url={url}", flush=True)
             if response.status_code >= 400:
@@ -825,7 +832,7 @@ class AmazonAgent:
         if not clean_url:
             return []
         try:
-            async with httpx.AsyncClient(headers=self._aliexpress_headers(), follow_redirects=True, timeout=6.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._aliexpress_headers(), follow_redirects=True, timeout=3.5, verify=False) as client:
                 response = await client.get(clean_url)
             print(f"[AliExpress Details] HTTP status={response.status_code}", flush=True)
             if response.status_code >= 400:
@@ -1240,7 +1247,7 @@ class AmazonAgent:
     async def fast_search_next(self, query: str, limit: int = 3) -> list[ProductResult]:
         url = f"https://www.next.co.il/he/search?w={quote_plus(query)}"
         try:
-            async with httpx.AsyncClient(headers=self._next_headers(), follow_redirects=True, timeout=8.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._next_headers(), follow_redirects=True, timeout=4.0, verify=False) as client:
                 response = await client.get(url)
                 if response.status_code == 403:
                     response = await client.get("https://www.next.co.il/he")
@@ -1289,7 +1296,7 @@ class AmazonAgent:
         if not clean_url:
             return []
         try:
-            async with httpx.AsyncClient(headers=self._next_headers(), follow_redirects=True, timeout=8.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._next_headers(), follow_redirects=True, timeout=4.0, verify=False) as client:
                 response = await client.get(clean_url)
             print(f"[Next Details] HTTP status={response.status_code}", flush=True)
             if response.status_code >= 400:
@@ -1757,7 +1764,7 @@ class AmazonAgent:
             return await self._fast_search_stock_provider(site, query, limit)
         url = str(config["search_url"]).format(query=quote_plus(query))
         try:
-            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=6.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=3.5, verify=False) as client:
                 response = await client.get(url)
             print(f"[{site} Search] HTTP status={response.status_code} url={url}", flush=True)
             if response.status_code >= 400:
@@ -1786,7 +1793,7 @@ class AmazonAgent:
         # Primary: internal JSON API (confirmed working)
         api_url = f"{base_url}/m_action/api/category/?search={quote_plus(query)}&page=1"
         try:
-            async with httpx.AsyncClient(headers=api_headers, follow_redirects=True, timeout=8.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=api_headers, follow_redirects=True, timeout=4.0, verify=False) as client:
                 response = await client.get(api_url)
             print(f"[ksp Search] API status={response.status_code} url={api_url}", flush=True)
             if response.status_code == 200:
@@ -1817,7 +1824,7 @@ class AmazonAgent:
         fallback_urls = [
             f"{base_url}/web/cat/0..0..0?q={quote_plus(query)}",
         ]
-        async with httpx.AsyncClient(headers=self._israeli_provider_headers(base_url), follow_redirects=True, timeout=8.0, verify=False) as client:
+        async with httpx.AsyncClient(headers=self._israeli_provider_headers(base_url), follow_redirects=True, timeout=4.0, verify=False) as client:
             for url in fallback_urls:
                 try:
                     response = await client.get(url)
@@ -1836,7 +1843,7 @@ class AmazonAgent:
         config = self._http_provider_configs()[site]
         url = str(config["search_url"]).format(query=quote_plus(query))
         try:
-            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=8.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=4.0, verify=False) as client:
                 response = await client.get(url)
             print(f"[{site} Search] HTTP status={response.status_code} url={url}", flush=True)
             if response.status_code >= 400 or self.page_has_no_results(response.text):
@@ -1857,7 +1864,7 @@ class AmazonAgent:
         config = self._http_provider_configs()["ikea"]
         url = f"https://www.ikea.co.il/catalogue/search?query={quote_plus(query)}"
         try:
-            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=8.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=4.0, verify=False) as client:
                 response = await client.get(url)
             print(f"[ikea Search] HTTP status={response.status_code} url={url}", flush=True)
             if response.status_code >= 400 or self.page_has_no_results(response.text):
@@ -1876,7 +1883,7 @@ class AmazonAgent:
         config = self._http_provider_configs()[site]
         url = str(config["search_url"]).format(query=quote_plus(query))
         try:
-            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=8.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=4.0, verify=False) as client:
                 response = await client.get(url)
             print(f"[{site} Search] HTTP status={response.status_code} url={url}", flush=True)
             if response.status_code >= 400 or self.page_has_no_results(response.text):
@@ -1898,7 +1905,7 @@ class AmazonAgent:
         if not clean_url:
             return []
         try:
-            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=6.0, verify=False) as client:
+            async with httpx.AsyncClient(headers=self._israeli_provider_headers(config["base_url"]), follow_redirects=True, timeout=3.5, verify=False) as client:
                 response = await client.get(clean_url)
             print(f"[{site} Details] HTTP status={response.status_code} url={clean_url}", flush=True)
             if response.status_code >= 400:
