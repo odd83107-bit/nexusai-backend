@@ -585,7 +585,6 @@ async def _fast_search_amazon(query: str, limit: int) -> list[ProductResult]:
 
 
 async def _fast_search_amazon_http_async(query: str, limit: int) -> list[ProductResult]:
-    import httpx as _httpx
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Accept-Language": "en-US,en;q=0.9",
@@ -593,7 +592,7 @@ async def _fast_search_amazon_http_async(query: str, limit: int) -> list[Product
     }
     url = f"https://www.amazon.com/s?k={quote_plus(query)}"
     print(f"[Amazon httpx] Requesting {url}", flush=True)
-    async with _httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=3.5, verify=False) as client:
+    async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=3.5, verify=False) as client:
         response = await client.get(url)
     print(f"[Amazon httpx] status={response.status_code} len={len(response.text)}", flush=True)
     if response.status_code >= 400:
@@ -626,7 +625,7 @@ def _parse_amazon_html(html_text: str, limit: int) -> list[ProductResult]:
         prod_url = AmazonAgent.normalize_product_url(prod_url)
         price_str = html.unescape(price_match.group(1)).strip() if price_match else None
         results.append(ProductResult(
-            nexus_id=AmazonAgent._build_nexus_id(prod_url or title),
+            nexus_id=AmazonAgent._build_nexus_id("amazon", prod_url or title),
             site="amazon", title=title, price=price_str, url=prod_url,
             image=None, variations=[], provider_name="Amazon",
         ))
